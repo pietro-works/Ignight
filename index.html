@@ -1,0 +1,351 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Ignight</title>
+<link rel="icon" href="favicon.ico" sizes="any">
+<link rel="icon" type="image/svg+xml" href="favicon.svg">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<link rel="manifest" href="site.webmanifest">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://cdnjs.cloudflare.com">
+<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400;0,700;1,400;1,700&family=Cormorant+Garamond:ital,wght@0,300;0,400;0,600;1,300;1,400&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="styles/ignight.css?v=20260519mp24webcamtransport">
+<script defer src="locales/en.js?v=20260519mp24webcamtransport"></script>
+<script defer src="locales/pl.js?v=20260519mp24webcamtransport"></script>
+<script defer src="locales/pt-BR.js?v=20260519mp24webcamtransport"></script>
+<script defer src="locales/fr.js?v=20260519mp24webcamtransport"></script>
+<script defer src="locales/de.js?v=20260519mp24webcamtransport"></script>
+<script defer src="locales/content-2026.js?v=20260519mp24webcamtransport"></script>
+<script defer src="scripts/card-manifest.js?v=20260519mp24webcamtransport"></script>
+<script defer src="scripts/gamification.js?v=20260519mp24webcamtransport"></script>
+<script defer src="scripts/sfx.js?v=20260519mp24webcamtransport"></script>
+<script defer src="https://cdnjs.cloudflare.com/ajax/libs/peerjs/1.5.5/peerjs.min.js"></script>
+<script defer src="scripts/app.js?v=20260519mp24webcamtransport"></script>
+</head>
+<body>
+<div class="bg">
+  <div class="orb orb-a" id="orb-a"></div>
+  <div class="orb orb-b" id="orb-b"></div>
+  <div class="orb orb-c" id="orb-c"></div>
+</div>
+<div class="heat-wash" id="heat-wash"></div>
+<div class="rift-bg palette-yes" id="rift-bg" aria-hidden="true">
+  <div class="rift-shear"></div>
+  <div class="rift-veil"></div>
+  <div class="rift-shock"></div>
+  <div class="rift-line"></div>
+</div>
+<div class="grain"></div>
+<div id="embers"></div>
+<div id="toast" role="status" aria-live="polite"></div>
+
+<section id="age-gate" aria-modal="true" role="dialog">
+  <div class="age-card">
+    <div class="sp-flame">🔥</div>
+    <div class="age-kicker" data-i18n="ageKicker">Adults only</div>
+    <h1>Ignight</h1>
+    <p data-i18n="ageCopy">Explicit erotic card play. Enter only if you are 18+ and allowed to view adult content where you are.</p>
+    <div class="age-actions">
+      <button class="sp-btn age-accept" id="age-accept" data-i18n="ageAccept">I am 18+</button>
+      <button class="age-exit" id="age-exit" data-i18n="ageExit">Leave</button>
+    </div>
+    <div class="legal-links">
+      <button data-legal="privacy" data-i18n="legalPrivacy">Privacy</button>
+      <button data-legal="terms" data-i18n="legalTerms">Terms</button>
+      <button data-legal="notice" data-i18n="legalNotice">Adult notice</button>
+      <button data-legal="contact" data-i18n="legalContact">Contact</button>
+    </div>
+  </div>
+</section>
+
+<div id="splash">
+  <div class="splash-fire-reveal" aria-hidden="true"></div>
+  <div class="splash-fire-orbit" id="splash-fire-orbit" aria-hidden="true"></div>
+  <div class="splash-logo-mask-stage" aria-hidden="true">
+    <div class="splash-logo-mask-text is-feather" id="splash-logo-mask-feather" data-text="Ignight">Ignight</div>
+    <div class="splash-logo-mask-text is-core" id="splash-logo-mask-text" data-text="Ignight">Ignight</div>
+  </div>
+  <div class="sp-flame">🔥</div>
+  <div class="sp-title" id="splash-logo">Ignight</div>
+  <div class="sp-sub" data-i18n="splashSubtitle">A game for two</div>
+  <div class="sp-sub-2" data-i18n="splashSubtitle2">or more</div>
+  <div class="sp-lang" aria-label="Language">
+    <button class="lang-btn active" data-lang="en">EN</button>
+    <button class="lang-btn" data-lang="pl">PL</button>
+    <button class="lang-btn" data-lang="pt-BR">PT</button>
+    <button class="lang-btn" data-lang="fr">FR</button>
+    <button class="lang-btn" data-lang="de">DE</button>
+  </div>
+  <div class="sp-divider"></div>
+  <button class="sp-btn" id="sp-btn" data-i18n="begin">Begin</button>
+  <div class="legal-links splash-legal">
+    <button data-legal="privacy" data-i18n="legalPrivacy">Privacy</button>
+    <button data-legal="terms" data-i18n="legalTerms">Terms</button>
+    <button data-legal="notice" data-i18n="legalNotice">Adult notice</button>
+  </div>
+</div>
+
+<section id="mode-select" class="hidden" aria-label="Game mode">
+  <button class="mode-close" id="mode-close" aria-label="Close game selector">×</button>
+  <button class="ritual-back" id="ritual-back" type="button" aria-label="Back">Back</button>
+  <div class="mode-shell">
+    <div class="sp-flame">🔥</div>
+    <h1 data-i18n="chooseGame">Choose the game</h1>
+    <p data-i18n="chooseGameSub">Same flame, different ritual</p>
+    <div class="mode-grid">
+      <button class="mode-card mode-never" data-game="neverHaveIEver">
+        <span class="mode-icon">🔥</span>
+        <strong data-i18n="gameNeverName">Never Have I Ever</strong>
+        <em data-i18n="gameNeverDesc">Swipe through confession cards and answer YES or NEVER.</em>
+      </button>
+      <button class="mode-card mode-td" data-game="truthOrDare">
+        <span class="mode-icon">🎭</span>
+        <strong data-i18n="gameTruthDareName">Truth or Dare</strong>
+        <em data-i18n="gameTruthDareDesc">Choose truth or dare each turn, with heat controlled by the deck.</em>
+      </button>
+    </div>
+    <div class="ritual-shell hidden" id="ritual-shell" aria-live="polite">
+      <span class="ritual-kicker" id="ritual-kicker">Tonight</span>
+      <h2 id="ritual-title">Choose the ritual</h2>
+      <p id="ritual-sub">A private arc for the room you want to enter.</p>
+      <div class="ritual-grid-wrap">
+        <div class="ritual-grid" id="ritual-grid"></div>
+      </div>
+    </div>
+  </div>
+  <a class="sponsor-card mode-sponsor hidden" id="sponsor-mode" href="mailto:ads@ignight.me?subject=Ignight%20partnership" rel="sponsored noopener noreferrer">
+    <span data-i18n="sponsorEyebrow">After-dark partner</span>
+    <strong data-i18n="sponsorModeTitle">Ignight partner</strong>
+    <em data-i18n="sponsorModeBody">A discreet pause for adult-friendly products and experiences.</em>
+    <b data-i18n="sponsorCta">Open partner</b>
+  </a>
+  <div class="legal-links mode-legal">
+    <button data-legal="privacy" data-i18n="legalPrivacy">Privacy</button>
+    <button data-legal="terms" data-i18n="legalTerms">Terms</button>
+    <button data-legal="contact" data-i18n="legalContact">Contact</button>
+  </div>
+</section>
+
+<div id="app">
+  <div class="hdr">
+    <div class="hdr-brand">
+      <button class="hdr-logo" id="hdr-logo" type="button" aria-label="Choose game mode">Ignight</button>
+      <div class="game-label" id="game-label">Never Have I Ever</div>
+    </div>
+    <div class="hdr-right">
+      <div class="mini-lang" aria-label="Language">
+        <button class="lang-btn active" data-lang="en">EN</button>
+        <button class="lang-btn" data-lang="pl">PL</button>
+        <button class="lang-btn" data-lang="pt-BR">PT</button>
+        <button class="lang-btn" data-lang="fr">FR</button>
+        <button class="lang-btn" data-lang="de">DE</button>
+      </div>
+      <div class="prog-bar"><div class="prog-fill" id="prog"></div></div>
+      <div class="prog-lbl" id="prog-lbl">0 of 0</div>
+    </div>
+  </div>
+
+  <div class="tabs-wrap">
+    <div class="tabs" id="tabs">
+      <div class="tab-pill" id="pill"></div>
+      <button class="tab active" data-cat="all">All</button>
+      <button class="tab" data-cat="warm">Warm</button>
+      <button class="tab" data-cat="hot">Hot</button>
+      <button class="tab" data-cat="fire">🔥 Fire</button>
+      <button class="ritual-active-tab hidden" id="ritual-active-tab" type="button" aria-label="Leave ritual">
+        <span id="ritual-active-title">Ritual</span>
+        <b aria-hidden="true">×</b>
+      </button>
+    </div>
+    <div class="mp-bar" id="mp-bar" aria-live="polite">
+      <div class="mp-copy" id="mp-copy">
+        <span id="mp-kicker">Multiplayer</span>
+        <strong id="mp-status">Never Have I Ever with Player 2</strong>
+      </div>
+      <div class="mp-tools">
+        <div class="mp-emoji-wrap">
+          <button class="mp-tool" id="mp-emoji" type="button" aria-label="Send emoji rain">✦</button>
+          <div class="mp-emoji-dial" id="mp-emoji-dial" aria-label="Emoji rain menu">
+            <button type="button" data-mp-emoji="💖">💖</button>
+            <button type="button" data-mp-emoji="💩">💩</button>
+            <button type="button" data-mp-emoji="💀">💀</button>
+            <button type="button" data-mp-emoji="💋">💋</button>
+          </div>
+        </div>
+        <button class="mp-tool mp-camera is-off" id="mp-camera" type="button" aria-label="Start webcam chat">◌</button>
+        <button class="mp-tool mp-exit" id="mp-exit" type="button" aria-label="Leave multiplayer">×</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="card-area">
+    <div class="bg-card">
+      <div class="corner tl"><svg viewBox="0 0 26 26" fill="none"><path d="M2 24L2 2L24 2" stroke="#c9a84c" stroke-width="1.5"/><circle cx="2" cy="2" r="1.8" fill="#c9a84c"/></svg></div>
+      <div class="corner tr"><svg viewBox="0 0 26 26" fill="none"><path d="M2 24L2 2L24 2" stroke="#c9a84c" stroke-width="1.5"/><circle cx="2" cy="2" r="1.8" fill="#c9a84c"/></svg></div>
+      <div class="corner bl"><svg viewBox="0 0 26 26" fill="none"><path d="M2 24L2 2L24 2" stroke="#c9a84c" stroke-width="1.5"/><circle cx="2" cy="2" r="1.8" fill="#c9a84c"/></svg></div>
+      <div class="corner br"><svg viewBox="0 0 26 26" fill="none"><path d="M2 24L2 2L24 2" stroke="#c9a84c" stroke-width="1.5"/><circle cx="2" cy="2" r="1.8" fill="#c9a84c"/></svg></div>
+      <div class="front-icon">🔥</div>
+      <div class="front-hint" data-i18n="tapToReveal">Tap to reveal</div>
+    </div>
+
+    <div class="deck-formation" id="deck-formation" aria-hidden="true">
+      <div class="deck-formation-glow"></div>
+    </div>
+
+    <div class="mp-webcam-bubble" id="mp-webcam" aria-label="Webcam chat">
+      <video class="mp-video is-remote" id="mp-remote-video" autoplay playsinline></video>
+      <img class="mp-relay-image" id="mp-relay-image" alt="" decoding="async">
+      <video class="mp-video is-local" id="mp-local-video" autoplay muted playsinline></video>
+      <div class="mp-video-empty" id="mp-video-empty" aria-hidden="true">
+        <span class="mp-empty-camera"></span>
+        <b data-i18n="mpWebcamChat">Webcam chat</b>
+      </div>
+    </div>
+
+    <div class="card-wrap">
+      <div class="card" id="card">
+        <div class="face front">
+          <div class="corner tl"><svg viewBox="0 0 26 26" fill="none"><path d="M2 24L2 2L24 2" stroke="#c9a84c" stroke-width="1.5"/><circle cx="2" cy="2" r="1.8" fill="#c9a84c"/></svg></div>
+          <div class="corner tr"><svg viewBox="0 0 26 26" fill="none"><path d="M2 24L2 2L24 2" stroke="#c9a84c" stroke-width="1.5"/><circle cx="2" cy="2" r="1.8" fill="#c9a84c"/></svg></div>
+          <div class="corner bl"><svg viewBox="0 0 26 26" fill="none"><path d="M2 24L2 2L24 2" stroke="#c9a84c" stroke-width="1.5"/><circle cx="2" cy="2" r="1.8" fill="#c9a84c"/></svg></div>
+          <div class="corner br"><svg viewBox="0 0 26 26" fill="none"><path d="M2 24L2 2L24 2" stroke="#c9a84c" stroke-width="1.5"/><circle cx="2" cy="2" r="1.8" fill="#c9a84c"/></svg></div>
+          <div class="front-icon">🔥</div>
+          <div class="front-hint" data-i18n="tapToReveal">Tap to reveal</div>
+        </div>
+
+        <div class="face back t-warm" id="back">
+          <span class="badge" id="badge">Warm</span>
+          <p class="c-text" id="c-text">Ready?</p>
+          <div class="c-emoji" id="c-emoji">✨</div>
+        </div>
+        <div class="dir-left" id="dir-left" data-label="NEVER" aria-hidden="true"><span class="dir-emoji">👼</span></div>
+        <div class="dir-right" id="dir-right" data-label="YES" aria-hidden="true"><span class="dir-emoji">😈</span></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="actions-slot">
+    <div class="actions" id="act-draw">
+      <button class="btn btn-draw" id="btn-draw" data-i18n="drawCard">Draw Card ✦</button>
+    </div>
+
+    <div class="actions hidden" id="act-rev">
+      <button class="btn btn-never" id="btn-never" data-i18n="answerNever">NEVER</button>
+      <button class="btn btn-yes" id="btn-yes" data-i18n="answerYes">YES</button>
+    </div>
+
+    <div class="actions hidden" id="act-td-choice">
+      <button class="btn btn-truth" id="btn-truth" data-i18n="truthLabel">Truth</button>
+      <button class="btn btn-dare" id="btn-dare" data-i18n="dareLabel">Dare</button>
+    </div>
+
+    <div class="actions hidden" id="act-td-result">
+      <button class="btn btn-skip" id="btn-skip" data-i18n="skip">Skip</button>
+      <button class="btn btn-done" id="btn-done" data-i18n="done">Done</button>
+    </div>
+  </div>
+
+  <div class="stats">
+    <div class="stat">
+      <div class="stat-lbl" id="stat-1-lbl" data-i18n="statDrawn">Drawn</div>
+      <div class="stat-val" id="s-drawn">0</div>
+    </div>
+    <div class="stat">
+      <div class="stat-lbl" id="stat-2-lbl" data-i18n="statLeft">Left</div>
+      <div class="stat-val" id="s-left">0</div>
+    </div>
+    <div class="stat">
+      <div class="stat-lbl" id="stat-3-lbl" data-i18n="answerYes">YES</div>
+      <div class="stat-val" id="s-yes">0</div>
+    </div>
+    <div class="stat">
+      <div class="stat-lbl" id="stat-4-lbl" data-i18n="answerNever">NEVER</div>
+      <div class="stat-val" id="s-never">0</div>
+    </div>
+  </div>
+</div>
+
+<section id="after" class="hidden" aria-modal="true" role="dialog">
+  <div class="after-card">
+    <div class="sp-flame">🔥</div>
+    <h1 data-i18n="afterTitle">Results</h1>
+    <p id="after-deck">All</p>
+    <div class="after-grid" id="after-grid">
+      <div class="after-stat"><b id="a-total">0</b><span id="a-total-lbl" data-i18n="afterAnswered">Answered</span></div>
+      <div class="after-stat"><b id="a-yes">0</b><span id="a-yes-lbl" data-i18n="answerYes">YES</span></div>
+      <div class="after-stat"><b id="a-never">0</b><span id="a-never-lbl" data-i18n="answerNever">NEVER</span></div>
+      <div class="after-stat hidden" id="after-extra"><b id="a-extra">0</b><span id="a-extra-lbl">Skips</span></div>
+    </div>
+    <div class="after-gamification hidden" id="after-gamification">
+      <div class="after-xp" id="after-xp">
+        <span class="after-kicker" id="after-kicker">Embers</span>
+        <div class="after-xp-head">
+          <b id="after-embers-total">0</b>
+          <span id="after-embers-earned">+0</span>
+        </div>
+        <div class="after-xp-bar" id="after-xp-bar" aria-hidden="true">
+          <i id="after-xp-fill"></i>
+        </div>
+      </div>
+      <p class="after-next hidden" id="after-next" aria-hidden="true"></p>
+      <section class="after-collection-section hidden" id="after-rituals-section">
+        <h3 id="after-rituals-title">Rituals</h3>
+        <div class="after-collection-grid compact" id="after-ritual-unlocks"></div>
+      </section>
+      <div class="after-collection-board" id="after-collection-board">
+        <section class="after-collection-section">
+          <h3 id="after-seals-title">Seals</h3>
+          <div class="after-collection-grid" id="after-seals"></div>
+        </section>
+        <section class="after-collection-section">
+          <h3 id="after-paths-title">Paths</h3>
+          <div class="after-collection-grid compact" id="after-paths"></div>
+        </section>
+        <section class="after-collection-section">
+          <h3 id="after-unlocks-title">Atmospheres</h3>
+          <div class="after-collection-grid compact" id="after-unlocks"></div>
+        </section>
+      </div>
+    </div>
+    <a class="sponsor-card after-sponsor hidden" id="sponsor-after" href="mailto:ads@ignight.me?subject=Ignight%20partnership" rel="sponsored noopener noreferrer">
+      <span data-i18n="sponsorEyebrow">After-dark partner</span>
+      <strong data-i18n="sponsorAfterTitle">The next round stays lit.</strong>
+      <em data-i18n="sponsorAfterBody">A premium pause for adult-friendly partners and affiliates.</em>
+      <b data-i18n="sponsorCta">Open partner</b>
+    </a>
+    <div class="after-actions">
+      <button class="sp-btn after-btn" id="after-again" data-i18n="playAgain">Play again</button>
+      <button class="sp-btn after-btn secondary" id="after-decks" data-i18n="chooseDeck">Choose another deck</button>
+    </div>
+  </div>
+  <div class="after-item-tooltip hidden" id="after-item-tooltip" aria-hidden="true">
+    <b></b>
+    <span></span>
+    <em></em>
+  </div>
+</section>
+
+<section id="legal-modal" class="hidden" aria-modal="true" role="dialog" aria-labelledby="legal-title">
+  <div class="legal-card">
+    <button class="legal-close" id="legal-close" aria-label="Close">×</button>
+    <div class="legal-kicker">Ignight 1.0 RC</div>
+    <h2 id="legal-title">Privacy</h2>
+    <p id="legal-body">Ignight stores only local game preferences in this release candidate.</p>
+  </div>
+</section>
+
+<section id="confirm-modal" class="hidden" aria-modal="true" role="dialog" aria-labelledby="confirm-title">
+  <div class="confirm-card">
+    <div class="confirm-kicker">Ignight</div>
+    <h2 id="confirm-title">Change the room?</h2>
+    <p id="confirm-body">This will reset the current run.</p>
+    <div class="confirm-actions">
+      <button class="confirm-cancel" id="confirm-cancel" type="button" data-i18n="confirmStay">Stay here</button>
+      <button class="confirm-primary" id="confirm-primary" type="button">Switch</button>
+    </div>
+  </div>
+</section>
+</body>
+</html>
