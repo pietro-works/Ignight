@@ -82,9 +82,11 @@
       pendingDrawId: null,
       pendingAnswerChoice: null,
       pendingAnswer: null,
+      pendingTdChoice: null,
+      pendingTdResult: null,
       playerStats: {
-        host: { yes: 0, never: 0 },
-        guest: { yes: 0, never: 0 }
+        host: { yes: 0, never: 0, truth: 0, dare: 0, skips: 0 },
+        guest: { yes: 0, never: 0, truth: 0, dare: 0, skips: 0 }
       },
       backchannelAttempted: false,
       relayClientId: null,
@@ -93,6 +95,7 @@
       relaySeq: 0,
       relayReadyNotified: false,
       relayFailCount: 0,
+      relayMissingCount: 0,
       iceServers: null,
       iceSource: 'default-stun',
       iceConfigured: false,
@@ -235,7 +238,7 @@
   const SPLASH_ANTICIPATION_MS = 250;
   const AFTER_GLOW_PERIOD_MS = 7200;
   const AGE_KEY = 'ignight.ageGate.v1';
-  const MP_PREFIX = 'ignight-never';
+  const MP_PREFIX = 'ignight-mp';
   const MP_PUBLIC_URL = 'https://ignight.me/';
   const MP_RELAY_URL = 'mp-relay.php';
   const VERSION = '1.0-rc';
@@ -1390,6 +1393,13 @@
 
   function setStatLabels() {
     if (G.game === GAME.TD) {
+      if (multiplayerActive()) {
+        els.stat1Lbl.textContent = t('afterPlayed');
+        els.stat2Lbl.textContent = t('statLeft');
+        els.stat3Lbl.textContent = mpPlayerScoreLabel('host');
+        els.stat4Lbl.textContent = mpPlayerScoreLabel('guest');
+        return;
+      }
       els.stat1Lbl.textContent = t('statTruths');
       els.stat2Lbl.textContent = t('statDares');
       els.stat3Lbl.textContent = isNoSkipRun() ? t('afterPlayed') : t('statSkips');
@@ -1411,10 +1421,17 @@
   function updateUI() {
     setStatLabels();
     if (G.game === GAME.TD) {
-      tick(els.sDrawn, G.truthDone);
-      tick(els.sLeft, G.dareDone);
-      tick(els.sYes, isNoSkipRun() ? G.drawn : G.skips);
-      tick(els.sNever, remaining());
+      if (multiplayerActive()) {
+        tick(els.sDrawn, G.drawn);
+        tick(els.sLeft, remaining());
+        tick(els.sYes, mpPlayerScore('host'));
+        tick(els.sNever, mpPlayerScore('guest'));
+      } else {
+        tick(els.sDrawn, G.truthDone);
+        tick(els.sLeft, G.dareDone);
+        tick(els.sYes, isNoSkipRun() ? G.drawn : G.skips);
+        tick(els.sNever, remaining());
+      }
     } else {
       tick(els.sDrawn, G.drawn);
       tick(els.sLeft, remaining());
@@ -1495,6 +1512,7 @@
       forceRelay: MP_FORCE_RELAY,
       relayClientId: G.mp.relayClientId,
       relayFailCount: G.mp.relayFailCount,
+      relayMissingCount: G.mp.relayMissingCount || 0,
       relaySeen: G.mp.relaySeen?.size || 0,
       playerStats: multiplayerActive() ? multiplayerRoundStats() : null,
       peer: G.mp.peer ? {
@@ -1699,8 +1717,8 @@
 
   function blankMpPlayerStats() {
     return {
-      host: { yes: 0, never: 0 },
-      guest: { yes: 0, never: 0 }
+      host: { yes: 0, never: 0, truth: 0, dare: 0, skips: 0 },
+      guest: { yes: 0, never: 0, truth: 0, dare: 0, skips: 0 }
     };
   }
 
@@ -1715,15 +1733,35 @@
   function mpStatsFor(role) {
     if (!G.mp.playerStats) resetMpPlayerStats();
     const key = normalizeMpRole(role);
-    if (!G.mp.playerStats[key]) G.mp.playerStats[key] = { yes: 0, never: 0 };
+    if (!G.mp.playerStats[key]) G.mp.playerStats[key] = {};
+    G.mp.playerStats[key] = {
+      yes: 0,
+      never: 0,
+      truth: 0,
+      dare: 0,
+      skips: 0,
+      ...G.mp.playerStats[key]
+    };
     return G.mp.playerStats[key];
   }
 
   function recordMpNeverOutcome(choice, role) {
-    if (!multiplayerActive() || G.game !== GAME.NEVER) return;
+    if (!multiplayerActive()) return;
     const stats = mpStatsFor(role || G.mp.role);
     if (choice === 'yes') stats.yes++;
     else stats.never++;
+  }
+
+  function recordMpTruthDareOutcome(outcome, kind, role) {
+    if (!multiplayerActive()) return;
+    const stats = mpStatsFor(role || G.mp.role);
+    if (outcome === 'skip') {
+      stats.skips++;
+    } else if (kind === 'dare') {
+      stats.dare++;
+    } else {
+      stats.truth++;
+    }
   }
 
   function mpInitial(text, fallback) {
@@ -1732,11 +1770,15 @@
   }
 
   function mpPlayerScoreLabel(role) {
+    if (G.game === GAME.TD) {
+      return `${role === 'host' ? 'P1' : 'P2'} ${mpInitial(t('statTruths'), 'T')}/${mpInitial(t('statDares'), 'D')}`;
+    }
     return `${role === 'host' ? 'P1' : 'P2'} ${mpInitial(t('answerYes'), 'Y')}/${mpInitial(t('answerNever'), 'N')}`;
   }
 
   function mpPlayerScore(role) {
     const stats = mpStatsFor(role);
+    if (G.game === GAME.TD) return `${stats.truth}/${stats.dare}`;
     return `${stats.yes}/${stats.never}`;
   }
 
@@ -1746,8 +1788,8 @@
     return {
       role: G.mp.role || null,
       turn: G.mp.turn || null,
-      host: { yes: host.yes, never: host.never },
-      guest: { yes: guest.yes, never: guest.never }
+      host: { yes: host.yes, never: host.never, truth: host.truth, dare: host.dare, skips: host.skips },
+      guest: { yes: guest.yes, never: guest.never, truth: guest.truth, dare: guest.dare, skips: guest.skips }
     };
   }
 
@@ -1792,6 +1834,11 @@
       url.searchParams.set('t', URL_FLAGS.get('t') || 'mpdebug');
     }
     return url.href;
+  }
+
+  function multiplayerGameDetail() {
+    if (!G.game) return t('mpMultiplayer');
+    return activeRitualTitle() || (G.game === GAME.TD ? t('gameTruthDareName') : t('gameNeverName'));
   }
 
   function defaultMpIceServers() {
@@ -1939,12 +1986,16 @@
       await navigator.clipboard.writeText(url);
       toast(t('mpInviteCopied'));
     } catch (e) {
-      window.prompt(t('mpCopyPrompt'), url);
+      try {
+        window.prompt(t('mpCopyPrompt'), url);
+      } catch (promptError) {
+        toast(t('mpTapCopyInvite'));
+      }
     }
   }
 
   function mpStatusCopy(status = null) {
-    if (!multiplayerActive()) return { kicker: t('mpMultiplayer'), detail: t('mpNeverClassic') };
+    if (!multiplayerActive()) return { kicker: t('mpMultiplayer'), detail: multiplayerGameDetail() };
     if (status === 'Signal') return { kicker: t('mpConnecting'), detail: t('mpOpeningRoom') };
     if (status === 'Reconnecting') return { kicker: t('mpReconnecting'), detail: t('mpWaitingPartner') };
     if (!G.mp.remoteReady) {
@@ -1953,7 +2004,7 @@
     }
     return {
       kicker: localTurn() ? t('mpYourTurn') : t('mpPartnerTurn'),
-      detail: t('mpNeverClassic')
+      detail: multiplayerGameDetail()
     };
   }
 
@@ -2173,6 +2224,7 @@
     if (active) {
       setMpStatus();
     } else {
+      document.body.classList.remove('mp-results');
       els.mpEmoji?.parentElement?.classList.remove('is-open');
       clearMpWebcamTimers();
       cancelMpWebcamMotion();
@@ -2180,7 +2232,7 @@
       els.mpWebcam?.classList.remove('has-local', 'has-remote', 'has-relay-remote', 'remote-video-live', 'is-live', 'is-visible', 'is-preview', 'is-minimizing', 'is-dragging', 'is-animating');
       els.mpRelayImage?.removeAttribute('src');
       if (els.mpCamera) els.mpCamera.classList.add('is-off');
-      ['btn-draw', 'btn-yes', 'btn-never'].forEach(id => {
+      ['btn-draw', 'btn-yes', 'btn-never', 'btn-truth', 'btn-dare', 'btn-skip', 'btn-done'].forEach(id => {
         const btn = $(id);
         if (btn) btn.disabled = false;
       });
@@ -2310,6 +2362,7 @@
 
   function handleMpRelayReady(data = null) {
     if (!multiplayerActive()) return;
+    G.mp.relayMissingCount = 0;
     const partner = mpRelayPartner(data);
     if (partner?.peerId && partner.peerId !== G.mp.relayClientId) {
       G.mp.remotePeerId = partner.peerId;
@@ -2330,6 +2383,31 @@
     }
   }
 
+  function handleMpRelayMissingPartner(data = null) {
+    if (!multiplayerActive() || !G.mp.remoteReady) return;
+    const hasOpenConnection = !!getOpenMpConn();
+    G.mp.relayMissingCount = (G.mp.relayMissingCount || 0) + 1;
+    if (hasOpenConnection && G.mp.relayMissingCount < 3) {
+      mpDebug('relay-partner-missing-grace', {
+        missingCount: G.mp.relayMissingCount,
+        partnerRole: remoteRole()
+      });
+      return;
+    }
+
+    G.mp.remoteReady = false;
+    G.mp.relayReadyNotified = false;
+    G.mp.remotePeerId = null;
+    setMpStatus('Reconnecting');
+    showCurrentActions();
+    toast(t('mpPlayerDisconnected'));
+    mpDebug('relay-partner-missing', {
+      partnerRole: remoteRole(),
+      missingCount: G.mp.relayMissingCount,
+      members: data?.members || null
+    });
+  }
+
   function scheduleMpRelayPoll(delay = 850) {
     clearTimeout(G.mp.relayTimer);
     if (!multiplayerActive() || !G.mp.relayClientId) return;
@@ -2346,6 +2424,7 @@
       });
       G.mp.relayFailCount = 0;
       if (data?.partnerPresent) handleMpRelayReady(data);
+      else handleMpRelayMissingPartner(data);
       (data?.messages || []).forEach(message => {
         const packet = message.payload || message;
         if (!packet) return;
@@ -2369,6 +2448,7 @@
     G.mp.relaySeq = 0;
     G.mp.relayFailCount = 0;
     G.mp.relayReadyNotified = false;
+    G.mp.relayMissingCount = 0;
     mpDebug('relay-start', { clientId: G.mp.relayClientId });
     mpRelayRequest('join')
       .then(data => {
@@ -2587,13 +2667,15 @@
   }
 
   function canProcessMpQueue() {
-    return multiplayerActive() && G.game === GAME.NEVER && !G.busy && !G.formingDeck && !G.tutorialing;
+    if (!multiplayerActive() || G.busy || G.formingDeck || G.tutorialing) return false;
+    if (G.game === GAME.TD && truthDareIntroBlocking()) return false;
+    return true;
   }
 
   function processMultiplayerQueue() {
     if (!canProcessMpQueue() || G.mp.suppressNetwork) return;
 
-    if (G.mp.pendingDrawId && !G.flipped) {
+    if (G.game === GAME.NEVER && G.mp.pendingDrawId && !G.flipped) {
       const cardId = G.mp.pendingDrawId;
       G.mp.pendingDrawId = null;
       G.mp.suppressNetwork = true;
@@ -2603,12 +2685,28 @@
     }
 
     const pendingAnswer = G.mp.pendingAnswer || (G.mp.pendingAnswerChoice ? { choice: G.mp.pendingAnswerChoice, role: remoteRole() } : null);
-    if (pendingAnswer?.choice && G.flipped && G.cur) {
+    if (G.game === GAME.NEVER && pendingAnswer?.choice && G.flipped && G.cur) {
       const { choice, role } = pendingAnswer;
       G.mp.pendingAnswerChoice = null;
       G.mp.pendingAnswer = null;
       G.mp.suppressNetwork = true;
       answer(choice, 'remote', { playerRole: role });
+      G.mp.suppressNetwork = false;
+      return;
+    }
+
+    if (G.game === GAME.TD && G.mp.pendingTdChoice && !G.flipped) {
+      const choice = G.mp.pendingTdChoice;
+      G.mp.pendingTdChoice = null;
+      receiveTruthDareChoice(choice);
+      return;
+    }
+
+    if (G.game === GAME.TD && G.mp.pendingTdResult && G.flipped && G.cur) {
+      const result = G.mp.pendingTdResult;
+      G.mp.pendingTdResult = null;
+      G.mp.suppressNetwork = true;
+      completeTruthDare(result.outcome, 'remote', { playerRole: result.role || remoteRole(), cardKind: result.kind || G.curKind });
       G.mp.suppressNetwork = false;
     }
   }
@@ -2633,6 +2731,25 @@
     updateUI();
   }
 
+  function truthDareSequenceIds() {
+    return {
+      truthIds: G.truthDeck.slice().reverse().map(card => card.id).filter(Boolean),
+      dareIds: G.dareDeck.slice().reverse().map(card => card.id).filter(Boolean)
+    };
+  }
+
+  function applyTruthDareSequence({ truthIds = [], dareIds = [], total = null } = {}) {
+    const truths = truthIds.map(id => cardFromLocale(G.locale, 'truthCards', id)).filter(Boolean);
+    const dares = dareIds.map(id => cardFromLocale(G.locale, 'dareCards', id)).filter(Boolean);
+    G.truthDeck = truths.slice().reverse();
+    G.dareDeck = dares.slice().reverse();
+    G.deck = [];
+    G.cur = null;
+    G.curKind = null;
+    G.total = Number.isFinite(total) ? Math.min(total, truths.length + dares.length) : truths.length + dares.length;
+    updateUI();
+  }
+
   function setNeverCurrentById(id) {
     const card = cardFromLocale(G.locale, 'neverCards', id);
     if (!card) return false;
@@ -2643,16 +2760,59 @@
     return true;
   }
 
+  function setTruthDareCurrentById(kind, id) {
+    const source = kind === 'dare' ? 'dareCards' : 'truthCards';
+    const card = cardFromLocale(G.locale, source, id);
+    if (!card) return false;
+    if (kind === 'dare') G.dareDeck = G.dareDeck.filter(item => item.id !== id);
+    else G.truthDeck = G.truthDeck.filter(item => item.id !== id);
+    G.cur = card;
+    G.curKind = kind === 'dare' ? 'dare' : 'truth';
+    applyCard(card, G.curKind);
+    return true;
+  }
+
+  function ritualForMultiplayerStart(game, ritualId) {
+    const fallbackId = game === GAME.TD ? 'classic-td' : 'classic-never';
+    return GM?.getRitual?.(ritualId || fallbackId) || GM?.getRitual?.(fallbackId) || null;
+  }
+
+  function applyMultiplayerStart(data) {
+    const game = data.game === GAME.TD ? GAME.TD : GAME.NEVER;
+    const ritual = ritualForMultiplayerStart(game, data.ritualId);
+    G.mp.turn = data.turn || 'host';
+    beginGame(game, ritual, { keepMultiplayer: true, bypassUnlock: true, fromNetwork: true });
+    G.cat = data.cat || G.cat;
+    if (game === GAME.TD) {
+      applyTruthDareSequence({
+        truthIds: data.truthIds || [],
+        dareIds: data.dareIds || [],
+        total: data.total
+      });
+    } else {
+      applyNeverSequence(data.deckIds || []);
+    }
+    setActiveTab(G.cat);
+    renderGameChrome();
+    setMpStatus('Connected');
+  }
+
   function mpSendStart() {
     if (!multiplayerActive() || G.mp.role !== 'host') return;
-    mpSend({
+    const payload = {
       type: 'start',
-      game: GAME.NEVER,
-      ritualId: 'classic-never',
+      game: G.game,
+      ritualId: G.ritual?.id || (G.game === GAME.TD ? 'classic-td' : 'classic-never'),
       cat: G.cat,
       turn: G.mp.turn,
-      deckIds: neverSequenceIds()
-    });
+      total: G.total
+    };
+    if (G.game === GAME.TD) {
+      Object.assign(payload, truthDareSequenceIds());
+    } else {
+      payload.deckIds = neverSequenceIds();
+    }
+    mpSend(payload);
   }
 
   function bindMpCall(call) {
@@ -2808,11 +2968,14 @@
       return;
     }
     if (data.type === 'start') {
-      mpDebug('start-received', { from: data.role || null, deckCount: data.deckIds?.length || 0 });
+      mpDebug('start-received', {
+        from: data.role || null,
+        game: data.game || null,
+        ritualId: data.ritualId || null,
+        deckCount: data.deckIds?.length || ((data.truthIds?.length || 0) + (data.dareIds?.length || 0))
+      });
       if (G.mp.role === 'guest') {
-        G.mp.turn = data.turn || 'host';
-        applyNeverSequence(data.deckIds || []);
-        setMpStatus('Connected');
+        applyMultiplayerStart(data);
       }
       return;
     }
@@ -2838,6 +3001,41 @@
       answer(data.choice, 'remote', { playerRole: data.role || remoteRole() });
       G.mp.turn = G.mp.role;
       setMpStatus();
+      G.mp.suppressNetwork = false;
+      return;
+    }
+    if (data.type === 'td-choice') {
+      const packet = { kind: data.kind === 'dare' ? 'dare' : 'truth', cardId: data.cardId || null, role: data.role || remoteRole() };
+      if (G.game !== GAME.TD) {
+        G.mp.pendingTdChoice = packet;
+        return;
+      }
+      if (!canProcessMpQueue() || G.flipped) {
+        G.mp.pendingTdChoice = packet;
+        return;
+      }
+      G.mp.suppressNetwork = true;
+      receiveTruthDareChoice(packet);
+      G.mp.suppressNetwork = false;
+      return;
+    }
+    if (data.type === 'td-result') {
+      const packet = {
+        outcome: data.outcome === 'skip' ? 'skip' : 'done',
+        kind: data.kind === 'dare' ? 'dare' : 'truth',
+        cardId: data.cardId || null,
+        role: data.role || remoteRole()
+      };
+      if (G.game !== GAME.TD) {
+        G.mp.pendingTdResult = packet;
+        return;
+      }
+      if (!canProcessMpQueue() || !G.flipped || !G.cur) {
+        G.mp.pendingTdResult = packet;
+        return;
+      }
+      G.mp.suppressNetwork = true;
+      completeTruthDare(packet.outcome, 'remote', { playerRole: packet.role, cardKind: packet.kind });
       G.mp.suppressNetwork = false;
       return;
     }
@@ -2902,6 +3100,8 @@
   }
 
   function startMultiplayerHost(ritual, options = {}) {
+    const game = ritual?.mode === GAME.TD || G.pendingGame === GAME.TD ? GAME.TD : GAME.NEVER;
+    const selectedRitual = ritual || GM?.getRitual?.(game === GAME.TD ? 'classic-td' : 'classic-never') || classicNeverRitual();
     G.mp.active = true;
     G.mp.role = 'host';
     G.mp.roomId = cleanMpRoom(options.roomId) || makeMpRoomId();
@@ -2910,15 +3110,17 @@
     G.mp.pendingDrawId = null;
     G.mp.pendingAnswerChoice = null;
     G.mp.pendingAnswer = null;
+    G.mp.pendingTdChoice = null;
+    G.mp.pendingTdResult = null;
     resetMpPlayerStats();
     setMpActive(true);
-    beginGame(GAME.NEVER, ritual || classicNeverRitual(), { keepMultiplayer: true });
-    mpDebug('host-start', { roomId: G.mp.roomId });
+    beginGame(game, selectedRitual, { keepMultiplayer: true });
+    mpDebug('host-start', { roomId: G.mp.roomId, game, ritualId: selectedRitual?.id || null });
     startMpRelay();
     startMpCamRelayPoll();
     queueMpWebcamIntro();
     startMpPeer();
-    track('multiplayer_started', { role: 'host', roomId: G.mp.roomId });
+    track('multiplayer_started', { role: 'host', roomId: G.mp.roomId, selectedGame: game, ritualId: selectedRitual?.id || null });
   }
 
   function startMultiplayerGuest(roomId) {
@@ -2930,6 +3132,8 @@
     G.mp.pendingDrawId = null;
     G.mp.pendingAnswerChoice = null;
     G.mp.pendingAnswer = null;
+    G.mp.pendingTdChoice = null;
+    G.mp.pendingTdResult = null;
     resetMpPlayerStats();
     setMpActive(true);
     beginGame(GAME.NEVER, classicNeverRitual(), { keepMultiplayer: true });
@@ -2973,6 +3177,8 @@
       pendingDrawId: null,
       pendingAnswerChoice: null,
       pendingAnswer: null,
+      pendingTdChoice: null,
+      pendingTdResult: null,
       playerStats: blankMpPlayerStats(),
       backchannelAttempted: false,
       relayClientId: null,
@@ -2981,6 +3187,7 @@
       relaySeq: 0,
       relayReadyNotified: false,
       relayFailCount: 0,
+      relayMissingCount: 0,
       iceServers: null,
       iceSource: 'default-stun',
       iceConfigured: false,
@@ -3282,6 +3489,7 @@
       updateTruthDareButtons();
       if (!G.flipped && remaining() <= 0) return;
       setActionVisible(G.flipped ? els.actTdResult : els.actTdChoice, true);
+      updateMultiplayerButtons();
       return;
     }
 
@@ -3319,8 +3527,21 @@
   }
 
   function updateMultiplayerButtons() {
-    if (!multiplayerActive() || G.game !== GAME.NEVER) return;
+    if (!multiplayerActive()) return;
     const disabled = !G.mp.remoteReady || !localTurn();
+    if (G.game === GAME.TD) {
+      if (disabled) {
+        [els.btnTruth, els.btnDare, els.btnSkip, $('btn-done')].forEach(btn => {
+          if (btn) btn.disabled = true;
+        });
+      } else {
+        updateTruthDareButtons();
+        [els.btnSkip, $('btn-done')].forEach(btn => {
+          if (btn) btn.disabled = false;
+        });
+      }
+      return;
+    }
     ['btn-draw', 'btn-yes', 'btn-never'].forEach(id => {
       const btn = $(id);
       if (btn) btn.disabled = disabled;
@@ -3355,6 +3576,7 @@
     G.skips = 0;
     if (multiplayerActive()) resetMpPlayerStats();
     G.completed = false;
+    document.body.classList.remove('mp-results');
     G.busy = false;
     G.truthDareIntroReady = G.game !== GAME.TD || !G.truthDareTutorialArmed;
     resetActionStreak();
@@ -3438,22 +3660,47 @@
     revealLoadedCard();
   }
 
-  function chooseTruthDare(kind, withRift = true) {
+  function chooseTruthDare(kind, withRift = true, options = {}) {
     if (G.game !== GAME.TD || G.busy || G.flipped || G.completed) return;
+    const source = options.source || 'local';
+    if (multiplayerActive() && source !== 'remote' && !multiplayerCanAct()) {
+      toast(multiplayerWaitCopy());
+      return;
+    }
     if (remaining() <= 0) {
       showAfter();
       return;
     }
     const deck = truthDareDeck(kind);
-    if (!deck.length) {
+    if (!options.cardId && !deck.length) {
       handleTruthDareEmpty(kind);
       return;
     }
 
+    if (options.cardId) {
+      if (!setTruthDareCurrentById(kind, options.cardId)) {
+        if (!deck.length) {
+          if (source === 'remote') {
+            showCurrentActions();
+            updateUI();
+          } else {
+            handleTruthDareEmpty(kind);
+          }
+          return;
+        }
+        G.cur = deck.pop();
+        G.curKind = kind;
+        applyCard(G.cur, kind);
+      }
+    } else {
+      G.cur = deck.pop();
+      G.curKind = kind;
+      applyCard(G.cur, kind);
+    }
     if (withRift) triggerRift(kind);
-    G.cur = deck.pop();
-    G.curKind = kind;
-    applyCard(G.cur, kind);
+    if (multiplayerActive() && source !== 'remote' && !G.mp.suppressNetwork) {
+      mpSend({ type: 'td-choice', kind, cardId: G.cur?.id || null });
+    }
     revealLoadedCard();
   }
 
@@ -3516,8 +3763,12 @@
     }, 260);
   }
 
-  function completeTruthDare(outcome, source = 'button') {
+  function completeTruthDare(outcome, source = 'button', meta = {}) {
     if (G.busy || !G.flipped || !G.cur || G.game !== GAME.TD) return;
+    if (multiplayerActive() && source !== 'remote' && !multiplayerCanAct()) {
+      toast(multiplayerWaitCopy());
+      return;
+    }
     if (outcome === 'skip') {
       if (isNoSkipRun()) {
         if (source === 'swipe') resetRejectedResultSwipe();
@@ -3534,7 +3785,18 @@
       registerActionStreak('dare');
     }
     GM?.recordOutcome(G.session, G.cur, `${G.curKind || 'card'}:${outcome}`);
+    if (multiplayerActive()) {
+      recordMpTruthDareOutcome(outcome, meta.cardKind || G.curKind, source === 'remote' ? meta.playerRole : G.mp.role);
+    }
     updateUI();
+    if (multiplayerActive() && source !== 'remote' && !G.mp.suppressNetwork) {
+      mpSend({ type: 'td-result', outcome, kind: G.curKind, cardId: G.cur?.id || null });
+      G.mp.turn = remoteRole();
+      setMpStatus();
+    } else if (multiplayerActive() && source === 'remote') {
+      G.mp.turn = G.mp.role;
+      setMpStatus();
+    }
     triggerRift(outcome === 'skip' ? 'never' : 'yes');
     dismiss(outcome === 'skip' ? 'never' : 'yes', source);
   }
@@ -3711,8 +3973,43 @@
     });
   }
 
+  function receiveTruthDareChoice({ kind, cardId, role } = {}) {
+    if (G.game !== GAME.TD || G.flipped || G.completed || !kind) return;
+    if (G.busy || truthDareIntroBlocking()) {
+      G.mp.pendingTdChoice = { kind, cardId, role };
+      return;
+    }
+    G.busy = true;
+    triggerRift(kind);
+    hideActions();
+    setSwipeOverlayContent();
+
+    const right = kind === 'dare';
+    const w = window.innerWidth || 480;
+    const previewX = right ? Math.min(114, w * 0.28) : -Math.min(114, w * 0.28);
+    const previewRot = right ? 5.5 : -5.5;
+    els.dirLeft.style.transition = 'opacity 0.32s ease';
+    els.dirRight.style.transition = 'opacity 0.32s ease';
+    els.dirLeft.style.opacity = right ? '0' : OVERLAY_MAX;
+    els.dirRight.style.opacity = right ? OVERLAY_MAX : '0';
+    els.card.style.transition = 'transform 0.38s cubic-bezier(0.16,1,0.3,1), opacity 0.2s ease';
+    els.card.style.transform = `translateX(${previewX}px) translateY(-7px) rotate(${previewRot}deg)`;
+    els.card.style.opacity = '1';
+    setChoiceFaceFade(0.18);
+
+    setTimeout(() => {
+      resetSyntheticSwipe();
+      G.busy = false;
+      chooseTruthDare(kind, false, { source: 'remote', cardId, playerRole: role || remoteRole() });
+    }, 700);
+  }
+
   function chooseTruthDareByButton(kind) {
     if (G.game !== GAME.TD || G.flipped || G.completed) return;
+    if (multiplayerActive() && !multiplayerCanAct()) {
+      toast(multiplayerWaitCopy());
+      return;
+    }
     if (!truthDareCanChoose(kind)) {
       handleTruthDareEmpty(kind);
       return;
@@ -3735,6 +4032,10 @@
       return;
     }
     if (G.game !== GAME.TD || G.flipped || G.completed) return;
+    if (multiplayerActive() && source !== 'remote' && !multiplayerCanAct()) {
+      toast(multiplayerWaitCopy());
+      return;
+    }
     if (!truthDareCanChoose(kind)) {
       handleTruthDareEmpty(kind);
       return;
@@ -3764,7 +4065,7 @@
     setTimeout(() => {
       resetSyntheticSwipe();
       G.busy = false;
-      chooseTruthDare(kind, false);
+      chooseTruthDare(kind, false, { source });
     }, duration);
   }
 
@@ -4575,6 +4876,7 @@
 
   function showAfter() {
     G.completed = true;
+    if (multiplayerActive()) document.body.classList.add('mp-results');
     hideActions();
     G.lastAfterglow = GM?.finishSession(G.session, currentStats(), G.lang) || null;
     syncModeCards();
@@ -5149,7 +5451,7 @@
         ? (game === GAME.TD ? t('gameTruthDareName') : t('gameNeverName'))
         : `${ritual.count?.neverCards || ((ritual.count?.truthCards || 0) + (ritual.count?.dareCards || 0))} ✦`;
       const footer = unlocked ? tone : (GM.unlockRequirement?.(ritual, progress, G.lang) || gmLabel('locked'));
-      const playChoice = ritual.id === 'classic-never'
+      const playChoice = unlocked
         ? `<div class="ritual-play-choice" aria-hidden="true">
             <b>${escapeHtml(t('mpStart'))}</b>
             <div>
@@ -5187,7 +5489,7 @@
   }
 
   function beginGame(game, ritual, options = {}) {
-    if (ritual && GM?.isRitualUnlocked?.(ritual, GM.readProgress()) === false) {
+    if (!options.bypassUnlock && ritual && GM?.isRitualUnlocked?.(ritual, GM.readProgress()) === false) {
       toast(gmLabel('locked'));
       return;
     }
@@ -5370,7 +5672,7 @@
         else beginGame(G.pendingGame, ritual);
         return;
       }
-      if (ritual?.id === 'classic-never' && !card.classList.contains('is-choice-open')) {
+      if (!card.classList.contains('is-choice-open')) {
         $$('.ritual-card.is-choice-open').forEach(item => item.classList.remove('is-choice-open'));
         card.classList.add('is-choice-open');
         window.SFX.click();

@@ -2039,6 +2039,10 @@ body.mp-active .mp-bar {
   animation: actions-flow-in 0.42s cubic-bezier(0.16,1,0.3,1) both;
 }
 
+body.mp-results .mp-bar {
+  display: none;
+}
+
 .mp-copy {
   min-width: 0;
   display: grid;
