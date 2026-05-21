@@ -21,6 +21,8 @@
   const MP_CAM_RELAY_URL = 'mp-cam-relay.php';
   const MP_CAM_FRAME_MS = 320;
   const MP_CAM_POLL_MS = 620;
+  const MP_STATE_VERSION = 2;
+  const MP_STATE_TTL_MS = 2 * 60 * 60 * 1000;
 
   if (IS_IOS_WEBKIT) document.documentElement.classList.add('ios');
   if (IS_ANDROID) document.documentElement.classList.add('android');
@@ -75,7 +77,14 @@
       calls: [],
       remotePeerId: null,
       remoteReady: false,
+      hadRemote: false,
+      connectionState: 'idle',
       turn: 'host',
+      stateSeq: 0,
+      lastAppliedSeq: 0,
+      stateBroadcastTimer: null,
+      pendingStateSnapshot: null,
+      lastStateRequestAt: 0,
       localStream: null,
       webcamOn: false,
       suppressNetwork: false,
@@ -1503,7 +1512,16 @@
       role: G.mp.role,
       roomId: G.mp.roomId,
       remoteReady: G.mp.remoteReady,
+      hadRemote: G.mp.hadRemote,
+      connectionState: G.mp.connectionState,
       remotePeerId: G.mp.remotePeerId,
+      stateSeq: G.mp.stateSeq || 0,
+      lastAppliedSeq: G.mp.lastAppliedSeq || 0,
+      lastStateRequestAt: G.mp.lastStateRequestAt || 0,
+      pendingStateSnapshot: G.mp.pendingStateSnapshot ? {
+        seq: G.mp.pendingStateSnapshot.seq || 0,
+        reason: G.mp.pendingStateSnapshot.reason || null
+      } : null,
       webcamOn: G.mp.webcamOn,
       isAndroid: IS_ANDROID,
       isIOS: IS_IOS_WEBKIT,
@@ -1693,6 +1711,10 @@
     return !!G.mp?.active;
   }
 
+  function mpConnectionBlocksAction() {
+    return ['waiting', 'connecting', 'reconnecting', 'offline', 'syncing'].includes(G.mp.connectionState);
+  }
+
   function localTurn() {
     if (!multiplayerActive()) return true;
     return G.mp.turn === G.mp.role;
@@ -1700,11 +1722,14 @@
 
   function multiplayerCanAct() {
     if (!multiplayerActive()) return true;
-    return G.mp.remoteReady && localTurn();
+    return G.mp.remoteReady && !mpConnectionBlocksAction() && localTurn();
   }
 
   function multiplayerWaitCopy() {
     if (!multiplayerActive()) return t('mpWait');
+    if (G.mp.connectionState === 'syncing') return t('mpRestoringSession');
+    if (G.mp.connectionState === 'offline') return t('mpTryingAgain');
+    if (G.mp.connectionState === 'reconnecting') return t('mpPartnerReconnecting');
     if (!G.mp.remoteReady) {
       return G.mp.role === 'host' ? t('mpSendInviteFirst') : t('mpWaitingHost');
     }
@@ -1964,6 +1989,40 @@
     });
   }
 
+  function setMpConnectionState(state, options = {}) {
+    if (!multiplayerActive()) return;
+    const previous = G.mp.connectionState;
+    const next = state || 'connected';
+    G.mp.connectionState = next;
+    G.mp.remoteReady = next === 'connected' || next === 'completed';
+    if (G.mp.remoteReady) {
+      G.mp.hadRemote = true;
+      G.mp.relayReadyNotified = true;
+      G.mp.relayMissingCount = 0;
+    }
+    if (options.peerId) G.mp.remotePeerId = options.peerId;
+    if (previous !== next) {
+      mpDebug('connection-state', { from: previous || null, to: next });
+      if (options.toastKey) toast(t(options.toastKey));
+    }
+    setMpStatus(options.status || null);
+    showCurrentActions();
+  }
+
+  function markMpConnected(options = {}) {
+    setMpConnectionState('connected', options);
+  }
+
+  function markMpReconnecting(reason = 'partner-missing', options = {}) {
+    if (!multiplayerActive()) return;
+    const offline = navigator.onLine === false;
+    setMpConnectionState(offline ? 'offline' : 'reconnecting', {
+      ...options,
+      toastKey: options.toast === false ? null : 'mpPlayerDisconnected'
+    });
+    mpDebug('reconnect-needed', { reason, offline });
+  }
+
   function setMpStatus(status = null) {
     if (!els.mpStatus || !els.mpKicker) return;
     const copy = mpStatusCopy(status);
@@ -1997,7 +2056,11 @@
   function mpStatusCopy(status = null) {
     if (!multiplayerActive()) return { kicker: t('mpMultiplayer'), detail: multiplayerGameDetail() };
     if (status === 'Signal') return { kicker: t('mpConnecting'), detail: t('mpOpeningRoom') };
-    if (status === 'Reconnecting') return { kicker: t('mpReconnecting'), detail: t('mpWaitingPartner') };
+    if (status === 'Reconnecting') return { kicker: t('mpReconnecting'), detail: t('mpPartnerReconnecting') };
+    if (G.mp.connectionState === 'syncing') return { kicker: t('mpSyncing'), detail: t('mpRestoringSession') };
+    if (G.mp.connectionState === 'offline') return { kicker: t('mpConnectionPaused'), detail: t('mpTryingAgain') };
+    if (G.mp.connectionState === 'reconnecting') return { kicker: t('mpReconnecting'), detail: t('mpPartnerReconnecting') };
+    if (G.mp.connectionState === 'completed') return { kicker: t('mpSessionComplete'), detail: multiplayerGameDetail() };
     if (!G.mp.remoteReady) {
       if (G.mp.role === 'host') return { kicker: t('mpWaitingPartner'), detail: t('mpTapCopyInvite') };
       return { kicker: t('mpJoiningPartner'), detail: t('mpWaitingHost') };
@@ -2367,24 +2430,36 @@
     if (partner?.peerId && partner.peerId !== G.mp.relayClientId) {
       G.mp.remotePeerId = partner.peerId;
     }
-    if (G.mp.remoteReady) return;
-    G.mp.remoteReady = true;
-    G.mp.relayReadyNotified = true;
-    setMpStatus('Connected');
-    showCurrentActions();
+    const wasReady = G.mp.hadRemote && ['connected', 'completed'].includes(G.mp.connectionState);
+    const wasSyncing = G.mp.hadRemote && G.mp.connectionState === 'syncing';
+    if (wasSyncing) {
+      G.mp.relayReadyNotified = true;
+      const requestAge = Date.now() - (G.mp.lastStateRequestAt || 0);
+      if (requestAge > 2600) requestMpState('relay-sync-retry');
+      setMpStatus();
+      return;
+    }
+    markMpConnected({ peerId: partner?.peerId || null, toast: false });
+    if (wasReady) return;
     toast(t('mpPlayerConnected'));
     mpDebug('relay-ready', {
       partnerRole: remoteRole(),
       partnerPeerId: partner?.peerId || null
     });
-    if (G.mp.role === 'host') mpSendStart();
+    if (G.mp.role === 'host') {
+      if (G.drawn || G.flipped || G.completed || (G.mp.stateSeq || 0) > 0) mpBroadcastState('relay-ready', { advance: false });
+      else mpSendStart();
+    } else {
+      setMpConnectionState('syncing', { toast: false });
+      requestMpState('relay-ready');
+    }
     if (G.mp.webcamOn && G.mp.localStream && G.mp.peer && G.mp.remotePeerId) {
       bindMpCall(G.mp.peer.call(G.mp.remotePeerId, G.mp.localStream));
     }
   }
 
   function handleMpRelayMissingPartner(data = null) {
-    if (!multiplayerActive() || !G.mp.remoteReady) return;
+    if (!multiplayerActive() || !G.mp.hadRemote) return;
     const hasOpenConnection = !!getOpenMpConn();
     G.mp.relayMissingCount = (G.mp.relayMissingCount || 0) + 1;
     if (hasOpenConnection && G.mp.relayMissingCount < 3) {
@@ -2395,12 +2470,9 @@
       return;
     }
 
-    G.mp.remoteReady = false;
-    G.mp.relayReadyNotified = false;
     G.mp.remotePeerId = null;
-    setMpStatus('Reconnecting');
-    showCurrentActions();
-    toast(t('mpPlayerDisconnected'));
+    G.mp.relayReadyNotified = false;
+    markMpReconnecting('relay-partner-missing', { toast: G.mp.connectionState !== 'reconnecting' && G.mp.connectionState !== 'offline' });
     mpDebug('relay-partner-missing', {
       partnerRole: remoteRole(),
       missingCount: G.mp.relayMissingCount,
@@ -2436,6 +2508,7 @@
     } catch (error) {
       G.mp.relayFailCount = (G.mp.relayFailCount || 0) + 1;
       mpDebug('relay-error', mpDebugError(error));
+      if (G.mp.hadRemote && G.mp.relayFailCount >= 2) markMpReconnecting('relay-error', { toast: false });
       scheduleMpRelayPoll(Math.min(2600, 900 + G.mp.relayFailCount * 320));
     }
   }
@@ -2449,6 +2522,7 @@
     G.mp.relayFailCount = 0;
     G.mp.relayReadyNotified = false;
     G.mp.relayMissingCount = 0;
+    G.mp.connectionState = G.mp.role === 'host' ? 'waiting' : 'connecting';
     mpDebug('relay-start', { clientId: G.mp.relayClientId });
     mpRelayRequest('join')
       .then(data => {
@@ -2639,6 +2713,7 @@
       .catch(error => {
         G.mp.relayFailCount = (G.mp.relayFailCount || 0) + 1;
         mpDebug('relay-send-error', { type: packet?.type || null, error: mpDebugError(error) });
+        if (G.mp.hadRemote && G.mp.relayFailCount >= 2) markMpReconnecting('relay-send-error', { toast: false });
       });
     return true;
   }
@@ -2654,8 +2729,13 @@
     const conn = getOpenMpConn();
     let sent = false;
     if (conn && conn.open) {
-      conn.send(packet);
-      sent = true;
+      try {
+        conn.send(packet);
+        sent = true;
+      } catch (error) {
+        mpDebug('conn-send-error', { type: payload?.type || null, error: mpDebugError(error) });
+        if (G.mp.hadRemote) markMpReconnecting('conn-send-error', { toast: false });
+      }
     }
     if (mpRelaySend(packet)) sent = true;
     if (!sent) {
@@ -2674,6 +2754,7 @@
 
   function processMultiplayerQueue() {
     if (!canProcessMpQueue() || G.mp.suppressNetwork) return;
+    if (applyPendingMpState()) return;
 
     if (G.game === GAME.NEVER && G.mp.pendingDrawId && !G.flipped) {
       const cardId = G.mp.pendingDrawId;
@@ -2772,6 +2853,227 @@
     return true;
   }
 
+  function mpDeckIds(deck = []) {
+    return deck.map(card => card?.id).filter(Boolean);
+  }
+
+  function mpCardsFromIds(ids = [], source) {
+    return (Array.isArray(ids) ? ids : [])
+      .map(id => cardFromLocale(G.locale, source, id))
+      .filter(Boolean);
+  }
+
+  function mpStorageKey(role = G.mp.role, roomId = G.mp.roomId) {
+    if (!role || !roomId) return null;
+    return `ignight:mp-state:${role}:${roomId}`;
+  }
+
+  function saveMpSnapshot(snapshot) {
+    const key = mpStorageKey();
+    if (!key || !snapshot) return;
+    try {
+      localStorage.setItem(key, JSON.stringify({
+        savedAt: Date.now(),
+        snapshot
+      }));
+    } catch (error) {
+      mpDebug('state-save-error', mpDebugError(error));
+    }
+  }
+
+  function loadMpStoredSnapshot(role = G.mp.role, roomId = G.mp.roomId) {
+    const key = mpStorageKey(role, roomId);
+    if (!key) return null;
+    try {
+      const raw = localStorage.getItem(key);
+      if (!raw) return null;
+      const stored = JSON.parse(raw);
+      if (!stored?.snapshot || Date.now() - Number(stored.savedAt || 0) > MP_STATE_TTL_MS) {
+        localStorage.removeItem(key);
+        return null;
+      }
+      return stored.snapshot;
+    } catch (error) {
+      mpDebug('state-load-error', mpDebugError(error));
+      return null;
+    }
+  }
+
+  function normalizeMpPlayerStats(stats = null) {
+    const next = blankMpPlayerStats();
+    ['host', 'guest'].forEach(role => {
+      if (!stats?.[role]) return;
+      ['yes', 'never', 'truth', 'dare', 'skips'].forEach(key => {
+        next[role][key] = Math.max(0, Number(stats[role][key]) || 0);
+      });
+    });
+    return next;
+  }
+
+  function buildMpSnapshot(reason = 'sync', { advance = false } = {}) {
+    if (!multiplayerActive()) return null;
+    if (advance && G.mp.role === 'host') G.mp.stateSeq = (G.mp.stateSeq || 0) + 1;
+    return {
+      version: MP_STATE_VERSION,
+      reason,
+      seq: G.mp.stateSeq || 0,
+      game: G.game,
+      ritualId: G.ritual?.id || (G.game === GAME.TD ? 'classic-td' : 'classic-never'),
+      cat: G.cat,
+      turn: G.mp.turn || 'host',
+      drawn: G.drawn,
+      yes: G.yes,
+      never: G.never,
+      truths: G.truthDone,
+      dares: G.dareDone,
+      skips: G.skips,
+      total: G.total,
+      completed: !!G.completed,
+      flipped: !!G.flipped,
+      curId: G.cur?.id || null,
+      curKind: G.curKind || null,
+      deckIds: G.game === GAME.NEVER ? mpDeckIds(G.deck) : [],
+      truthDeckIds: G.game === GAME.TD ? mpDeckIds(G.truthDeck) : [],
+      dareDeckIds: G.game === GAME.TD ? mpDeckIds(G.dareDeck) : [],
+      playerStats: normalizeMpPlayerStats(G.mp.playerStats)
+    };
+  }
+
+  function setMpCurrentFromSnapshot(snapshot) {
+    const flipped = !!snapshot.flipped && !!snapshot.curId;
+    els.card.classList.toggle('do-flip', flipped);
+    els.back.classList.toggle('shown', flipped);
+    G.flipped = flipped;
+    G.cur = null;
+    G.curKind = null;
+    if (!snapshot.curId) {
+      setSwipeOverlayContent();
+      return;
+    }
+    const kind = snapshot.game === GAME.TD && snapshot.curKind === 'dare' ? 'dare' : (snapshot.game === GAME.TD ? 'truth' : null);
+    const source = snapshot.game === GAME.TD
+      ? (kind === 'dare' ? 'dareCards' : 'truthCards')
+      : 'neverCards';
+    const card = cardFromLocale(G.locale, source, snapshot.curId);
+    if (!card) {
+      G.flipped = false;
+      els.card.classList.remove('do-flip');
+      els.back.classList.remove('shown');
+      setSwipeOverlayContent();
+      return;
+    }
+    G.cur = card;
+    G.curKind = kind;
+    applyCard(card, kind);
+    els.card.classList.toggle('do-flip', G.flipped);
+    els.back.classList.toggle('shown', G.flipped);
+    setSwipeOverlayContent();
+  }
+
+  function applyMpSnapshot(snapshot, options = {}) {
+    if (!snapshot || !multiplayerActive()) return false;
+    const seq = Number(snapshot.seq) || 0;
+    if (!options.force && seq < (G.mp.lastAppliedSeq || 0)) {
+      mpDebug('state-sync-stale', { seq, lastAppliedSeq: G.mp.lastAppliedSeq || 0, reason: snapshot.reason || null });
+      return false;
+    }
+    if (!options.force && (G.busy || G.formingDeck || G.tutorialing)) {
+      G.mp.pendingStateSnapshot = snapshot;
+      mpDebug('state-sync-queued', { seq, reason: snapshot.reason || null });
+      return false;
+    }
+
+    const game = snapshot.game === GAME.TD ? GAME.TD : GAME.NEVER;
+    const ritual = ritualForMultiplayerStart(game, snapshot.ritualId);
+    const ritualId = ritual?.id || null;
+    const sameGame = G.game === game && (G.ritual?.id || null) === ritualId;
+    G.mp.suppressNetwork = true;
+    if (!sameGame) beginGame(game, ritual, { keepMultiplayer: true, bypassUnlock: true, fromNetwork: true });
+    G.game = game;
+    G.ritual = ritual;
+    G.cat = snapshot.cat || G.cat || 'all';
+    G.mp.turn = normalizeMpRole(snapshot.turn);
+    G.drawn = Math.max(0, Number(snapshot.drawn) || 0);
+    G.yes = Math.max(0, Number(snapshot.yes) || 0);
+    G.never = Math.max(0, Number(snapshot.never) || 0);
+    G.truthDone = Math.max(0, Number(snapshot.truths) || 0);
+    G.dareDone = Math.max(0, Number(snapshot.dares) || 0);
+    G.skips = Math.max(0, Number(snapshot.skips) || 0);
+    G.total = Math.max(0, Number(snapshot.total) || 0);
+    G.completed = !!snapshot.completed;
+    G.mp.playerStats = normalizeMpPlayerStats(snapshot.playerStats);
+    if (game === GAME.TD) {
+      G.deck = [];
+      G.truthDeck = mpCardsFromIds(snapshot.truthDeckIds, 'truthCards');
+      G.dareDeck = mpCardsFromIds(snapshot.dareDeckIds, 'dareCards');
+    } else {
+      G.truthDeck = [];
+      G.dareDeck = [];
+      G.deck = mpCardsFromIds(snapshot.deckIds, 'neverCards');
+    }
+    clearSwipeTutorialTimers();
+    cancelSwipeNudge({ reset: false });
+    clearDeckFormation();
+    G.formingDeck = false;
+    G.tutorialing = false;
+    G.busy = false;
+    setActiveTab(G.cat);
+    setMpCurrentFromSnapshot({ ...snapshot, game });
+    renderGameChrome();
+    updateUI();
+    G.mp.lastAppliedSeq = Math.max(G.mp.lastAppliedSeq || 0, seq);
+    G.mp.stateSeq = Math.max(G.mp.stateSeq || 0, seq);
+    G.mp.pendingStateSnapshot = null;
+    saveMpSnapshot(buildMpSnapshot('local-store'));
+    if (G.completed) {
+      document.body.classList.add('mp-results');
+      if (els.after.classList.contains('hidden')) showAfter();
+      if (!options.preserveConnection) setMpConnectionState('completed', { toast: false });
+    } else {
+      els.after.classList.add('hidden');
+      document.body.classList.remove('mp-results');
+      if (!options.preserveConnection) markMpConnected({ toast: false });
+    }
+    G.mp.suppressNetwork = false;
+    processMultiplayerQueue();
+    mpDebug('state-sync-applied', { seq, reason: snapshot.reason || null, forced: !!options.force });
+    return true;
+  }
+
+  function applyPendingMpState() {
+    if (!G.mp.pendingStateSnapshot || G.busy || G.formingDeck || G.tutorialing) return false;
+    const snapshot = G.mp.pendingStateSnapshot;
+    G.mp.pendingStateSnapshot = null;
+    return applyMpSnapshot(snapshot);
+  }
+
+  function mpBroadcastState(reason = 'sync', options = {}) {
+    if (!multiplayerActive() || G.mp.role !== 'host') return false;
+    const snapshot = buildMpSnapshot(reason, { advance: options.advance !== false });
+    if (!snapshot) return false;
+    saveMpSnapshot(snapshot);
+    return mpSend({ type: 'state-sync', snapshot, reason });
+  }
+
+  function queueMpStateBroadcast(reason = 'sync', delay = 760) {
+    if (!multiplayerActive() || G.mp.role !== 'host') return;
+    clearTimeout(G.mp.stateBroadcastTimer);
+    G.mp.stateBroadcastTimer = setTimeout(() => {
+      G.mp.stateBroadcastTimer = null;
+      mpBroadcastState(reason);
+    }, delay);
+  }
+
+  function requestMpState(reason = 'reconnect') {
+    if (!multiplayerActive()) return false;
+    G.mp.lastStateRequestAt = Date.now();
+    return mpSend({
+      type: 'state-request',
+      knownSeq: G.mp.lastAppliedSeq || G.mp.stateSeq || 0,
+      reason
+    });
+  }
+
   function ritualForMultiplayerStart(game, ritualId) {
     const fallbackId = game === GAME.TD ? 'classic-td' : 'classic-never';
     return GM?.getRitual?.(ritualId || fallbackId) || GM?.getRitual?.(fallbackId) || null;
@@ -2794,7 +3096,11 @@
     }
     setActiveTab(G.cat);
     renderGameChrome();
-    setMpStatus('Connected');
+    if (data.snapshot) {
+      applyMpSnapshot(data.snapshot, { force: true, fromStart: true });
+    } else {
+      markMpConnected({ toast: false });
+    }
   }
 
   function mpSendStart() {
@@ -2812,6 +3118,8 @@
     } else {
       payload.deckIds = neverSequenceIds();
     }
+    payload.snapshot = buildMpSnapshot('start', { advance: false });
+    saveMpSnapshot(payload.snapshot);
     mpSend(payload);
   }
 
@@ -2904,12 +3212,16 @@
     const wasReady = G.mp.remoteReady;
     mpDebug(eventName, { peer: conn.peer || null });
     G.mp.conn = conn;
-    G.mp.remoteReady = true;
-    setMpStatus('Connected');
-    showCurrentActions();
+    markMpConnected({ peerId: conn.peer || null, toast: false });
     if (!wasReady) toast(t('mpPlayerConnected'));
     mpSend({ type: 'hello' });
-    if (G.mp.role === 'host') mpSendStart();
+    if (G.mp.role === 'host') {
+      if (G.drawn || G.flipped || G.completed || (G.mp.stateSeq || 0) > 0) mpBroadcastState('conn-open', { advance: false });
+      else mpSendStart();
+    } else {
+      setMpConnectionState('syncing', { toast: false });
+      requestMpState('conn-open');
+    }
     if (G.mp.webcamOn && G.mp.localStream && G.mp.peer && G.mp.remotePeerId) {
       bindMpCall(G.mp.peer.call(G.mp.remotePeerId, G.mp.localStream));
     }
@@ -2940,12 +3252,9 @@
       mpDebug('conn-close', { peer: conn.peer || null });
       G.mp.conns = (G.mp.conns || []).filter(item => item !== conn);
       if (G.mp.conn === conn) G.mp.conn = getOpenMpConn();
-      G.mp.remoteReady = !!G.mp.conn?.open || !!G.mp.relayReadyNotified;
-      if (!G.mp.remoteReady) {
-        setMpStatus(G.mp.role === 'host' ? 'Invite ready' : 'Reconnecting');
-        showCurrentActions();
-        toast(t('mpPlayerDisconnected'));
-      }
+      if (G.mp.conn?.open || G.mp.relayReadyNotified) markMpConnected({ toast: false });
+      else if (G.mp.hadRemote) markMpReconnecting('conn-close');
+      else setMpConnectionState(G.mp.role === 'host' ? 'waiting' : 'connecting', { toast: false });
     });
     conn.on('error', error => {
       mpDebug('conn-error', { peer: conn.peer || null, error: mpDebugError(error) });
@@ -2960,11 +3269,36 @@
       receiveMpDebug(data.entry);
       return;
     }
+    if (!G.mp.remoteReady && data.type !== 'leave') markMpConnected({ toast: false });
     if (data.type === 'hello') {
       mpDebug('hello-received', { from: data.role || null });
-      G.mp.remoteReady = true;
-      setMpStatus('Connected');
-      if (G.mp.role === 'host') mpSendStart();
+      markMpConnected({ toast: false });
+      if (G.mp.role === 'host') {
+        if (G.drawn || G.flipped || G.completed || (G.mp.stateSeq || 0) > 0) mpBroadcastState('hello', { advance: false });
+        else mpSendStart();
+      } else {
+        setMpConnectionState('syncing', { toast: false });
+        requestMpState('hello');
+      }
+      return;
+    }
+    if (data.type === 'leave') {
+      mpDebug('leave-received', { from: data.role || null });
+      markMpReconnecting('peer-left');
+      return;
+    }
+    if (data.type === 'state-request') {
+      mpDebug('state-request-received', { from: data.role || null, knownSeq: data.knownSeq || 0, reason: data.reason || null });
+      if (G.mp.role === 'host') mpBroadcastState(data.reason || 'state-request', { advance: false });
+      return;
+    }
+    if (data.type === 'state-sync') {
+      mpDebug('state-sync-received', {
+        from: data.role || null,
+        seq: data.snapshot?.seq || 0,
+        reason: data.reason || data.snapshot?.reason || null
+      });
+      applyMpSnapshot(data.snapshot);
       return;
     }
     if (data.type === 'start') {
@@ -3095,8 +3429,19 @@
       console.warn('[Ignight multiplayer]', error);
       toast(error?.type === 'peer-unavailable' ? 'Room not found. Open the matching host link first.' : (error?.type === 'unavailable-id' ? t('mpRoomBusy') : t('mpSignalError')));
     });
-    G.mp.peer.on('disconnected', () => mpDebug('peer-disconnected'));
-    G.mp.peer.on('close', () => mpDebug('peer-close'));
+    G.mp.peer.on('disconnected', () => {
+      mpDebug('peer-disconnected');
+      if (G.mp.hadRemote) markMpReconnecting('peer-disconnected', { toast: false });
+      try {
+        if (!G.mp.peer.destroyed && G.mp.peer.disconnected) G.mp.peer.reconnect();
+      } catch (error) {
+        mpDebug('peer-reconnect-error', mpDebugError(error));
+      }
+    });
+    G.mp.peer.on('close', () => {
+      mpDebug('peer-close');
+      if (G.mp.hadRemote) markMpReconnecting('peer-close', { toast: false });
+    });
   }
 
   function startMultiplayerHost(ritual, options = {}) {
@@ -3107,6 +3452,14 @@
     G.mp.roomId = cleanMpRoom(options.roomId) || makeMpRoomId();
     G.mp.turn = 'host';
     G.mp.remoteReady = false;
+    G.mp.hadRemote = false;
+    G.mp.connectionState = 'waiting';
+    G.mp.stateSeq = 0;
+    G.mp.lastAppliedSeq = 0;
+    G.mp.pendingStateSnapshot = null;
+    G.mp.lastStateRequestAt = 0;
+    clearTimeout(G.mp.stateBroadcastTimer);
+    G.mp.stateBroadcastTimer = null;
     G.mp.pendingDrawId = null;
     G.mp.pendingAnswerChoice = null;
     G.mp.pendingAnswer = null;
@@ -3115,6 +3468,8 @@
     resetMpPlayerStats();
     setMpActive(true);
     beginGame(game, selectedRitual, { keepMultiplayer: true });
+    const stored = loadMpStoredSnapshot('host', G.mp.roomId);
+    if (stored && !stored.completed) applyMpSnapshot(stored, { force: true, restored: true, preserveConnection: true });
     mpDebug('host-start', { roomId: G.mp.roomId, game, ritualId: selectedRitual?.id || null });
     startMpRelay();
     startMpCamRelayPoll();
@@ -3129,6 +3484,14 @@
     G.mp.roomId = roomId;
     G.mp.turn = 'host';
     G.mp.remoteReady = false;
+    G.mp.hadRemote = false;
+    G.mp.connectionState = 'connecting';
+    G.mp.stateSeq = 0;
+    G.mp.lastAppliedSeq = 0;
+    G.mp.pendingStateSnapshot = null;
+    G.mp.lastStateRequestAt = 0;
+    clearTimeout(G.mp.stateBroadcastTimer);
+    G.mp.stateBroadcastTimer = null;
     G.mp.pendingDrawId = null;
     G.mp.pendingAnswerChoice = null;
     G.mp.pendingAnswer = null;
@@ -3147,6 +3510,10 @@
 
   function cleanupMultiplayer() {
     mpDebug('cleanup-multiplayer');
+    if (multiplayerActive()) {
+      try { mpSend({ type: 'leave' }); } catch (e) {}
+    }
+    clearTimeout(G.mp.stateBroadcastTimer);
     stopMpCamRelay({ notify: true });
     stopMpRelay();
     (G.mp.conns || []).forEach(conn => {
@@ -3170,7 +3537,14 @@
       calls: [],
       remotePeerId: null,
       remoteReady: false,
+      hadRemote: false,
+      connectionState: 'idle',
       turn: 'host',
+      stateSeq: 0,
+      lastAppliedSeq: 0,
+      stateBroadcastTimer: null,
+      pendingStateSnapshot: null,
+      lastStateRequestAt: 0,
       localStream: null,
       webcamOn: false,
       suppressNetwork: false,
@@ -3528,7 +3902,7 @@
 
   function updateMultiplayerButtons() {
     if (!multiplayerActive()) return;
-    const disabled = !G.mp.remoteReady || !localTurn();
+    const disabled = !G.mp.remoteReady || mpConnectionBlocksAction() || !localTurn();
     if (G.game === GAME.TD) {
       if (disabled) {
         [els.btnTruth, els.btnDare, els.btnSkip, $('btn-done')].forEach(btn => {
@@ -3658,6 +4032,7 @@
       }
     }
     revealLoadedCard();
+    if (multiplayerActive()) queueMpStateBroadcast('draw', 620);
   }
 
   function chooseTruthDare(kind, withRift = true, options = {}) {
@@ -3702,6 +4077,7 @@
       mpSend({ type: 'td-choice', kind, cardId: G.cur?.id || null });
     }
     revealLoadedCard();
+    if (multiplayerActive()) queueMpStateBroadcast('td-choice', source === 'remote' ? 1240 : 760);
   }
 
   function answer(choice, source = 'button', meta = {}) {
@@ -3729,6 +4105,7 @@
       G.mp.turn = G.mp.role;
       setMpStatus();
     }
+    if (multiplayerActive()) queueMpStateBroadcast('answer', source === 'remote' ? 1240 : 980);
     dismiss(choice, source);
   }
 
@@ -3797,6 +4174,7 @@
       G.mp.turn = G.mp.role;
       setMpStatus();
     }
+    if (multiplayerActive()) queueMpStateBroadcast('td-result', source === 'remote' ? 1240 : 980);
     triggerRift(outcome === 'skip' ? 'never' : 'yes');
     dismiss(outcome === 'skip' ? 'never' : 'yes', source);
   }
@@ -3968,6 +4346,7 @@
           G.mp.turn = remoteRole();
           setMpStatus();
         }
+        if (multiplayerActive()) queueMpStateBroadcast('answer', 980);
         dismiss(choice, 'swipe', { busyAlready: true });
       }
     });
@@ -4120,6 +4499,7 @@
       if (finished) {
         G.busy = false;
         showAfter();
+        applyPendingMpState();
         return;
       }
 
@@ -4876,7 +5256,11 @@
 
   function showAfter() {
     G.completed = true;
-    if (multiplayerActive()) document.body.classList.add('mp-results');
+    if (multiplayerActive()) {
+      document.body.classList.add('mp-results');
+      setMpConnectionState('completed', { toast: false });
+      queueMpStateBroadcast('completed', 120);
+    }
     hideActions();
     G.lastAfterglow = GM?.finishSession(G.session, currentStats(), G.lang) || null;
     syncModeCards();
@@ -5110,6 +5494,11 @@
       rain: emojiRain,
       formation: devTriggerFormation,
       effects: setEffectQuality,
+      mpSnapshot: () => buildMpSnapshot('debug', { advance: false }),
+      mpApplySnapshot: snapshot => applyMpSnapshot(snapshot, { force: true }),
+      mpApplySnapshotStrict: snapshot => applyMpSnapshot(snapshot),
+      mpConnection: state => setMpConnectionState(state, { toast: false }),
+      mpRequestState: requestMpState,
       reset: () => GM?.resetProgress?.()
     };
   }
@@ -5898,6 +6287,18 @@
       if (active) movePill(active);
       syncSplashLogoFx();
       if (multiplayerActive()) positionMpWebcam(webcamDrag.corner || 'tr');
+    });
+
+    window.addEventListener('offline', () => {
+      if (!multiplayerActive()) return;
+      markMpReconnecting('browser-offline', { toast: false });
+    });
+
+    window.addEventListener('online', () => {
+      if (!multiplayerActive()) return;
+      setMpConnectionState('syncing', { toast: false });
+      requestMpState('browser-online');
+      scheduleMpRelayPoll(120);
     });
 
     window.addEventListener('beforeunload', () => {
