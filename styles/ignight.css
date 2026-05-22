@@ -247,6 +247,11 @@ body.mood-pulse .heat-wash {
   animation: rift-shock 1.08s cubic-bezier(0.08,0.82,0.18,1) both;
 }
 
+html.fx-recommended .rift-bg.playing .rift-shock,
+html.fx-low .rift-bg.playing .rift-shock {
+  animation-name: rift-shock-lite;
+}
+
 .rift-bg.playing .rift-shard.is-live {
   animation: rift-shard-fly var(--d) cubic-bezier(0.08,0.82,0.18,1) var(--delay) both;
 }
@@ -273,6 +278,12 @@ body.mood-pulse .heat-wash {
   0% { opacity: 0; transform: translate(-50%, -50%) scale(0.1); filter: blur(0); }
   18% { opacity: 0.95; }
   100% { opacity: 0; transform: translate(-50%, -50%) scale(4.4); filter: blur(18px); }
+}
+
+@keyframes rift-shock-lite {
+  0% { opacity: 0; transform: translate(-50%, -50%) scale(0.1); }
+  18% { opacity: 0.68; }
+  100% { opacity: 0; transform: translate(-50%, -50%) scale(4.2); }
 }
 
 @keyframes rift-shard-fly {
@@ -2889,6 +2900,36 @@ html.fx-low .deck-formation-card {
   animation-name: deck-swan-fan;
 }
 
+html.fx-recommended .deck-formation.running .deck-formation-card.is-live,
+html.fx-low .deck-formation.running .deck-formation-card.is-live {
+  animation-name: deck-sidecut-lite;
+}
+
+html.fx-recommended .deck-formation.running.formation-sidecut .deck-formation-card.is-live.is-landing,
+html.fx-low .deck-formation.running.formation-sidecut .deck-formation-card.is-live.is-landing {
+  animation-name: deck-sidecut-landing-lite;
+}
+
+html.fx-recommended .deck-formation.running.formation-crown .deck-formation-card.is-live,
+html.fx-low .deck-formation.running.formation-crown .deck-formation-card.is-live {
+  animation-name: deck-crown-arc-lite;
+}
+
+html.fx-recommended .deck-formation.running.formation-orbit .deck-formation-card.is-live,
+html.fx-low .deck-formation.running.formation-orbit .deck-formation-card.is-live {
+  animation-name: deck-orbit-weave-lite;
+}
+
+html.fx-recommended .deck-formation.running.formation-spiral .deck-formation-card.is-live,
+html.fx-low .deck-formation.running.formation-spiral .deck-formation-card.is-live {
+  animation-name: deck-spiral-fall-lite;
+}
+
+html.fx-recommended .deck-formation.running.formation-swan .deck-formation-card.is-live,
+html.fx-low .deck-formation.running.formation-swan .deck-formation-card.is-live {
+  animation-name: deck-swan-fan-lite;
+}
+
 .deck-formation-card.is-landing {
   z-index: 999;
   display: flex;
@@ -2928,9 +2969,20 @@ html.fx-low .deck-formation-card {
   pointer-events: none;
 }
 
+html.fx-recommended .card.deck-form-hidden,
+html.fx-low .card.deck-form-hidden {
+  filter: none;
+  transform: scale(1.045) translateY(8px);
+}
+
 .card.deck-form-land {
   pointer-events: none;
   animation: deck-real-land 0.42s cubic-bezier(0.16,1,0.3,1) both;
+}
+
+html.fx-recommended .card.deck-form-land,
+html.fx-low .card.deck-form-land {
+  animation-name: deck-real-land-lite;
 }
 
 @keyframes deck-sidecut {
@@ -3065,6 +3117,121 @@ html.fx-low .deck-formation-card {
 @keyframes deck-real-land {
   from { opacity: 0; filter: blur(10px); transform: scale(1.06) translateY(10px); }
   to { opacity: 1; filter: blur(0); transform: scale(1) translateY(0); }
+}
+
+@keyframes deck-sidecut-lite {
+  0% {
+    opacity: 0;
+    transform: translate3d(var(--from-x), var(--from-y), 0) rotateZ(var(--from-rz)) scale(0.98);
+  }
+  46% {
+    opacity: 1;
+    transform: translate3d(var(--mid-x), var(--mid-y), 0) rotateZ(var(--mid-rz)) scale(1.04);
+  }
+  100% {
+    opacity: var(--final-opacity);
+    transform: translate3d(var(--to-x), var(--to-y), var(--to-z)) rotateZ(var(--to-rz)) scale(var(--to-scale));
+  }
+}
+
+@keyframes deck-sidecut-landing-lite {
+  0% {
+    opacity: 0;
+    transform: translate3d(var(--from-x), var(--from-y), 0) rotateZ(var(--from-rz)) scale(0.98);
+  }
+  42% {
+    opacity: 1;
+    transform: translate3d(var(--mid-x), var(--mid-y), 0) rotateZ(var(--mid-rz)) scale(1);
+  }
+  78% {
+    opacity: 1;
+    transform: translate3d(0, -10px, 0) rotateZ(0deg) scale(1);
+  }
+  100% {
+    opacity: 1;
+    transform: translate3d(0, 0, 0) rotateZ(0deg) scale(1);
+  }
+}
+
+@keyframes deck-crown-arc-lite {
+  0% {
+    opacity: 0;
+    transform: translate3d(var(--wide-from-x), var(--wide-from-y), 0) rotateX(54deg) rotateY(var(--tilt-y)) rotateZ(var(--wide-from-rz)) scale(var(--start-scale, 0.72));
+  }
+  34% {
+    opacity: 1;
+    transform: translate3d(var(--arc-x), var(--arc-y), 0) rotateX(16deg) rotateY(var(--tilt-y)) rotateZ(var(--arc-rz)) scale(var(--mid-scale, 1.04));
+  }
+  72% {
+    opacity: 0.96;
+    transform: translate3d(var(--fan-x), var(--fan-y), 0) rotateX(5deg) rotateY(0deg) rotateZ(var(--fan-rz)) scale(var(--pre-scale, 1.02));
+  }
+  100% {
+    opacity: var(--final-opacity);
+    transform: translate3d(var(--to-x), var(--to-y), 0) rotateX(0deg) rotateZ(var(--to-rz)) scale(var(--to-scale));
+  }
+}
+
+@keyframes deck-orbit-weave-lite {
+  0% {
+    opacity: 0;
+    transform: translate3d(var(--orbit-start-x), var(--orbit-start-y), 0) rotateX(62deg) rotateY(var(--tilt-y)) rotateZ(var(--wide-from-rz)) scale(var(--start-scale, 0.68));
+  }
+  30% {
+    opacity: 1;
+    transform: translate3d(var(--orbit-mid-x), var(--orbit-mid-y), 0) rotateX(24deg) rotateY(var(--tilt-y)) rotateZ(var(--orbit-rz)) scale(var(--mid-scale, 1.06));
+  }
+  62% {
+    opacity: 0.94;
+    transform: translate3d(var(--weave-x), var(--weave-y), 0) rotateX(8deg) rotateY(calc(var(--tilt-y) * -0.35)) rotateZ(var(--weave-rz)) scale(var(--pre-scale, 1.01));
+  }
+  100% {
+    opacity: var(--final-opacity);
+    transform: translate3d(var(--to-x), var(--to-y), 0) rotateX(0deg) rotateZ(var(--to-rz)) scale(var(--to-scale));
+  }
+}
+
+@keyframes deck-spiral-fall-lite {
+  0% {
+    opacity: 0;
+    transform: translate3d(var(--spiral-a-x), var(--spiral-a-y), 0) rotateX(70deg) rotateY(var(--tilt-y)) rotateZ(calc(var(--spiral-rz) - 120deg)) scale(var(--start-scale, 0.58));
+  }
+  30% {
+    opacity: 1;
+    transform: translate3d(var(--spiral-b-x), var(--spiral-b-y), 0) rotateX(32deg) rotateY(calc(var(--tilt-y) * 0.4)) rotateZ(var(--spiral-rz)) scale(var(--mid-scale, 0.94));
+  }
+  66% {
+    opacity: 0.98;
+    transform: translate3d(var(--spiral-c-x), var(--spiral-c-y), 0) rotateX(9deg) rotateY(0deg) rotateZ(var(--spiral-end-rz)) scale(var(--pre-scale, 1.04));
+  }
+  100% {
+    opacity: var(--final-opacity);
+    transform: translate3d(var(--to-x), var(--to-y), 0) rotateX(0deg) rotateZ(var(--to-rz)) scale(var(--to-scale));
+  }
+}
+
+@keyframes deck-swan-fan-lite {
+  0% {
+    opacity: 0;
+    transform: translate3d(var(--swan-start-x), var(--swan-start-y), 0) rotateX(58deg) rotateY(var(--tilt-y)) rotateZ(var(--wide-from-rz)) scale(var(--start-scale, 0.64));
+  }
+  36% {
+    opacity: 1;
+    transform: translate3d(var(--swan-wing-x), var(--swan-wing-y), 0) rotateX(20deg) rotateY(var(--tilt-y)) rotateZ(var(--swan-wing-rz)) scale(var(--mid-scale, 1.05));
+  }
+  74% {
+    opacity: 0.98;
+    transform: translate3d(var(--swan-fan-x), var(--swan-fan-y), 0) rotateX(4deg) rotateY(0deg) rotateZ(var(--swan-fan-rz)) scale(var(--pre-scale, 1.03));
+  }
+  100% {
+    opacity: var(--final-opacity);
+    transform: translate3d(var(--to-x), var(--to-y), 0) rotateX(0deg) rotateZ(var(--to-rz)) scale(var(--to-scale));
+  }
+}
+
+@keyframes deck-real-land-lite {
+  from { opacity: 0; transform: scale(1.045) translateY(8px); }
+  to { opacity: 1; transform: scale(1) translateY(0); }
 }
 
 @keyframes deck-formation-glow {
@@ -3647,6 +3814,86 @@ body[data-game="truthOrDare"][data-td-phase="result"] .dir-right::after {
   to { opacity: 0; filter: blur(8px); transform: translateX(58vw) scale(0.98); }
 }
 
+html.fx-recommended .actions.flow-enter,
+html.fx-low .actions.flow-enter {
+  animation-name: actions-flow-in-lite;
+}
+
+html.fx-recommended .actions.flow-exit,
+html.fx-low .actions.flow-exit {
+  animation-name: actions-flow-out-lite;
+}
+
+html.fx-recommended .actions.flow-enter .btn,
+html.fx-low .actions.flow-enter .btn {
+  animation-name: btn-single-in-lite;
+}
+
+html.fx-recommended .actions.flow-exit .btn,
+html.fx-low .actions.flow-exit .btn {
+  animation-name: btn-single-out-lite;
+}
+
+html.fx-recommended .actions.flow-enter .btn:first-child:not(:only-child),
+html.fx-low .actions.flow-enter .btn:first-child:not(:only-child) {
+  animation-name: btn-left-in-lite;
+}
+
+html.fx-recommended .actions.flow-enter .btn:last-child:not(:only-child),
+html.fx-low .actions.flow-enter .btn:last-child:not(:only-child) {
+  animation-name: btn-right-in-lite;
+}
+
+html.fx-recommended .actions.flow-exit .btn:first-child:not(:only-child),
+html.fx-low .actions.flow-exit .btn:first-child:not(:only-child) {
+  animation-name: btn-left-out-lite;
+}
+
+html.fx-recommended .actions.flow-exit .btn:last-child:not(:only-child),
+html.fx-low .actions.flow-exit .btn:last-child:not(:only-child) {
+  animation-name: btn-right-out-lite;
+}
+
+@keyframes actions-flow-in-lite {
+  from { opacity: 0; transform: scale(1.025); }
+  to { opacity: 1; transform: scale(1); }
+}
+
+@keyframes actions-flow-out-lite {
+  from { opacity: 1; transform: scale(1); }
+  to { opacity: 0; transform: scale(0.985); }
+}
+
+@keyframes btn-single-in-lite {
+  from { opacity: 0; transform: translateY(72px) scale(1.025); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+@keyframes btn-single-out-lite {
+  from { opacity: 1; transform: translateY(0) scale(1); }
+  to { opacity: 0; transform: translateY(62px) scale(0.985); }
+}
+
+@keyframes btn-left-in-lite {
+  from { opacity: 0; transform: translateX(-62vw) scale(1.025); }
+  to { opacity: 1; transform: translateX(0) scale(1); }
+}
+
+@keyframes btn-right-in-lite {
+  from { opacity: 0; transform: translateX(62vw) scale(1.025); }
+  to { opacity: 1; transform: translateX(0) scale(1); }
+}
+
+@keyframes btn-left-out-lite {
+  from { opacity: 1; transform: translateX(0) scale(1); }
+  to { opacity: 0; transform: translateX(-58vw) scale(0.985); }
+}
+
+@keyframes btn-right-out-lite {
+  from { opacity: 1; transform: translateX(0) scale(1); }
+  to { opacity: 0; transform: translateX(58vw) scale(0.985); }
+}
+
 .btn {
   border: none;
   border-radius: 14px;
@@ -3698,6 +3945,12 @@ body[data-game="truthOrDare"][data-td-phase="result"] .dir-right::after {
   color: var(--gold-l);
   box-shadow: 0 0 24px rgba(201,168,76,0.1);
   animation: btn-idle 3s ease-in-out infinite;
+}
+
+html.fx-recommended .btn-draw,
+html.fx-low .btn-draw {
+  animation: none;
+  box-shadow: 0 0 26px rgba(201,168,76,0.15);
 }
 
 @keyframes btn-idle {
@@ -5425,6 +5678,19 @@ button.after-collection-item.is-unlocked.is-tip-open::before {
 .dev-panel b {
   color: rgba(245,237,224,0.72);
   padding: 0 5px;
+}
+
+.dev-fx-readout {
+  align-items: flex-start;
+}
+
+.dev-fx-readout span {
+  flex: 1 1 240px;
+  color: rgba(245,237,224,0.72);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.56rem;
+  line-height: 1.35;
+  letter-spacing: 0.02em;
 }
 
 .dev-panel button {

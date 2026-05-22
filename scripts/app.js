@@ -280,14 +280,24 @@
   };
   const RIFT_PALETTES = ['palette-never', 'palette-yes', 'palette-truth', 'palette-dare'];
   const EFFECT_PROFILES = {
+    'ultra-high': {
+      splashParticles: 46,
+      riftShards: { never: 56, yes: 56, truth: 56, dare: 64 },
+      riftTimeoutMs: 1720,
+      deckCountScale: 1.18,
+      deckDurScale: 1.06,
+      deckLandingScale: 1.08,
+      deckOpacityScale: 1.08,
+      emojiRainCount: 42
+    },
     recommended: {
-      splashParticles: 34,
-      riftShards: { never: 18, yes: 18, truth: 18, dare: 20 },
-      riftTimeoutMs: 1400,
-      deckCountScale: 0.66,
-      deckDurScale: 0.86,
-      deckLandingScale: 0.94,
-      deckOpacityScale: 0.82,
+      splashParticles: 30,
+      riftShards: { never: 12, yes: 12, truth: 12, dare: 14 },
+      riftTimeoutMs: 1320,
+      deckCountScale: 0.54,
+      deckDurScale: 0.82,
+      deckLandingScale: 0.9,
+      deckOpacityScale: 0.74,
       emojiRainCount: 20
     },
     high: {
@@ -319,7 +329,51 @@
       deckLandingScale: 0.88,
       deckOpacityScale: 0.72,
       emojiRainCount: 12
+    },
+    'ultra-low': {
+      splashParticles: 6,
+      riftShards: { never: 4, yes: 4, truth: 4, dare: 5 },
+      riftTimeoutMs: 1050,
+      deckCountScale: 0.34,
+      deckDurScale: 0.68,
+      deckLandingScale: 0.78,
+      deckOpacityScale: 0.52,
+      emojiRainCount: 6
     }
+  };
+  const EFFECT_CLASS_NAMES = Object.keys(EFFECT_PROFILES).map(name => `fx-${name}`).concat(['fx-high', 'fx-low']);
+  const EFFECT_JANK_KEY = 'ignight.fxJank.v1';
+  const EFFECT_MEMORY_MS = 24 * 60 * 60 * 1000;
+  const FX_OVERRIDE = normalizeEffectQuality(URL_FLAGS.get('fx') || URL_FLAGS.get('effects') || URL_FLAGS.get('quality'));
+  const FX_REDUCED_MOTION = (() => {
+    try {
+      return window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
+    } catch (e) {
+      return false;
+    }
+  })();
+  const FX_SAVE_DATA = !!navigator.connection?.saveData;
+  const FX_PERF = {
+    forced: !!FX_OVERRIDE,
+    manualLock: false,
+    reason: '',
+    initial: 'recommended',
+    phase: 'boot',
+    phaseUntil: 0,
+    frames: [],
+    phaseFrames: [],
+    longTasks: 0,
+    longTaskTimes: [],
+    lastTs: 0,
+    rafId: 0,
+    lastMetricsAt: 0,
+    stats: null,
+    probe: null,
+    probeRunning: false,
+    pendingQuality: null,
+    pendingTimer: null,
+    debugEl: null,
+    debugTextEl: null
   };
   const MOOD_SYMBOLS = {
     confession: '"✧   ◌   ✧"',
@@ -348,6 +402,7 @@
   let swipeNudgeTimers = [];
   let riftTimer = null;
   let deckFormationTimer = null;
+  let fxQualityTimer = null;
   let modeFormationIndex = 0;
   let splashIntroStarted = false;
   let splashAnticipationTimer = null;
@@ -381,23 +436,307 @@
     busy: false
   };
 
+  function normalizeEffectQuality(quality) {
+    const value = String(quality || '').trim().toLowerCase();
+    const aliases = {
+      ultra: 'ultra-high',
+      ultrahigh: 'ultra-high',
+      'ultra_high': 'ultra-high',
+      uhigh: 'ultra-high',
+      rec: 'recommended',
+      recommend: 'recommended',
+      baseline: 'recommended',
+      med: 'medium',
+      ultralow: 'ultra-low',
+      'ultra_low': 'ultra-low',
+      ulow: 'ultra-low'
+    };
+    const normalized = aliases[value] || value;
+    return EFFECT_PROFILES[normalized] ? normalized : null;
+  }
+
+  function readEffectJankMemory() {
+    try {
+      const raw = localStorage.getItem(EFFECT_JANK_KEY);
+      if (!raw) return null;
+      const data = JSON.parse(raw);
+      if (!data?.until || data.until < Date.now() || !EFFECT_PROFILES[data.quality]) {
+        localStorage.removeItem(EFFECT_JANK_KEY);
+        return null;
+      }
+      return data;
+    } catch (e) {
+      return null;
+    }
+  }
+
+  function writeEffectJankMemory(quality, reason, stats = null) {
+    if (!['recommended', 'low', 'ultra-low'].includes(quality)) return;
+    try {
+      localStorage.setItem(EFFECT_JANK_KEY, JSON.stringify({
+        quality,
+        reason,
+        stats,
+        until: Date.now() + EFFECT_MEMORY_MS
+      }));
+    } catch (e) {}
+  }
+
+  function isMobileEffectTarget() {
+    const uaMobile = IS_ANDROID || IS_IOS_WEBKIT || /Mobi|Mobile|Tablet/i.test(navigator.userAgent);
+    let coarsePointer = false;
+    try {
+      coarsePointer = window.matchMedia?.('(pointer: coarse)').matches;
+    } catch (e) {}
+    const minScreen = Math.min(screen.width || window.innerWidth, screen.height || window.innerHeight);
+    const minViewport = Math.min(window.innerWidth || minScreen, window.innerHeight || minScreen);
+    return uaMobile || minViewport <= 540 || (coarsePointer && minScreen <= 920);
+  }
+
+  function isDesktopEffectTarget() {
+    return !isMobileEffectTarget();
+  }
+
+  function isFlagshipMobileCandidate() {
+    if (!isMobileEffectTarget()) return false;
+    const cores = navigator.hardwareConcurrency || 0;
+    const memory = navigator.deviceMemory || 0;
+    const dpr = window.devicePixelRatio || 1;
+    const minScreen = Math.min(screen.width || window.innerWidth, screen.height || window.innerHeight);
+    const minViewport = Math.min(window.innerWidth || minScreen, window.innerHeight || minScreen);
+    const strongAndroid = IS_ANDROID && (memory >= 6 || cores >= 8) && dpr >= 2.5;
+    const strongIOS = IS_IOS_WEBKIT && dpr >= 3 && Math.max(minScreen, minViewport) >= 390 && (cores >= 6 || !cores);
+    return strongAndroid || strongIOS;
+  }
+
   function detectEffectQuality() {
+    if (FX_OVERRIDE) {
+      FX_PERF.reason = `url:${FX_OVERRIDE}`;
+      return FX_OVERRIDE;
+    }
+    if (FX_REDUCED_MOTION || FX_SAVE_DATA) {
+      FX_PERF.reason = FX_REDUCED_MOTION ? 'reduced-motion' : 'save-data';
+      return 'low';
+    }
+    const remembered = readEffectJankMemory();
+    if (remembered) {
+      FX_PERF.reason = `memory:${remembered.reason || remembered.quality}`;
+      return remembered.quality;
+    }
+    if (isDesktopEffectTarget()) {
+      FX_PERF.reason = 'desktop';
+      return 'high';
+    }
+    FX_PERF.reason = isFlagshipMobileCandidate() ? 'mobile-flagship-probe' : 'mobile-baseline';
     return 'recommended';
   }
 
-  function setEffectQuality(quality) {
-    const safeQuality = EFFECT_PROFILES[quality] ? quality : 'recommended';
+  function setEffectQuality(quality, options = {}) {
+    const safeQuality = normalizeEffectQuality(quality) || 'recommended';
+    if (options.manual) FX_PERF.manualLock = true;
     G.effectQuality = safeQuality;
+    FX_PERF.reason = options.reason || FX_PERF.reason || 'manual';
     document.documentElement.dataset.fx = safeQuality;
-    Object.keys(EFFECT_PROFILES).forEach(name => {
-      document.documentElement.classList.toggle(`fx-${name}`, name === safeQuality);
-    });
+    EFFECT_CLASS_NAMES.forEach(name => document.documentElement.classList.remove(name));
+    document.documentElement.classList.add(`fx-${safeQuality}`);
+    if (safeQuality === 'ultra-high') document.documentElement.classList.add('fx-high');
+    if (safeQuality === 'ultra-low') document.documentElement.classList.add('fx-low');
     window.IgnightEffectQuality = safeQuality;
     window.IgnightSetEffectQuality = setEffectQuality;
+    updateFxDebugPanel();
+    if (els.splash && els.splash.style.display !== 'none') requestAnimationFrame(syncSplashLogoFx);
   }
 
   function effectProfile() {
     return EFFECT_PROFILES[G.effectQuality] || EFFECT_PROFILES.recommended;
+  }
+
+  function baselineEffectQuality() {
+    return ['recommended', 'low', 'ultra-low'].includes(G.effectQuality);
+  }
+
+  function markFxPhase(phase, durationMs = 1200) {
+    FX_PERF.phase = phase;
+    FX_PERF.phaseUntil = performance.now() + durationMs;
+    FX_PERF.phaseFrames = [];
+    updateFxDebugPanel();
+  }
+
+  function fxStats(frames = FX_PERF.frames) {
+    const clean = frames.filter(n => Number.isFinite(n) && n > 0 && n < 250);
+    if (!clean.length) {
+      return { fps: 0, avg: 0, p95: 0, dropped: 0, samples: 0, longTasks: 0, longTasksTotal: FX_PERF.longTasks };
+    }
+    const now = performance.now();
+    const recentLongTasks = FX_PERF.longTaskTimes.filter(time => now - time < 10000).length;
+    const sorted = [...clean].sort((a, b) => a - b);
+    const avg = clean.reduce((sum, value) => sum + value, 0) / clean.length;
+    const p95 = sorted[Math.min(sorted.length - 1, Math.floor(sorted.length * 0.95))];
+    return {
+      fps: Math.round(1000 / avg),
+      avg: Math.round(avg * 10) / 10,
+      p95: Math.round(p95 * 10) / 10,
+      dropped: clean.filter(value => value > 34).length,
+      samples: clean.length,
+      longTasks: recentLongTasks,
+      longTasksTotal: FX_PERF.longTasks
+    };
+  }
+
+  function fxReport() {
+    return {
+      quality: G.effectQuality,
+      reason: FX_PERF.reason,
+      forced: FX_PERF.forced,
+      manualLock: FX_PERF.manualLock,
+      phase: FX_PERF.phase,
+      stats: FX_PERF.stats || fxStats(),
+      probe: FX_PERF.probe,
+      mobile: isMobileEffectTarget(),
+      flagshipCandidate: isFlagshipMobileCandidate(),
+      reducedMotion: FX_REDUCED_MOTION,
+      saveData: FX_SAVE_DATA,
+      device: {
+        dpr: window.devicePixelRatio || 1,
+        cores: navigator.hardwareConcurrency || null,
+        memory: navigator.deviceMemory || null,
+        screen: `${screen.width || window.innerWidth}x${screen.height || window.innerHeight}`,
+        ua: navigator.userAgent
+      }
+    };
+  }
+
+  function updateFxDebugPanel() {
+    if (!FX_PERF.debugTextEl) return;
+    const stats = FX_PERF.stats || fxStats();
+    FX_PERF.debugTextEl.textContent = [
+      `FX ${G.effectQuality}`,
+      FX_PERF.reason || 'auto',
+      `phase ${FX_PERF.phase}`,
+      `fps ${stats.fps || '...'}`,
+      `p95 ${stats.p95 || '...'}ms`,
+      `drop ${stats.dropped || 0}`,
+      `long ${stats.longTasks || 0}`
+    ].join(' · ');
+  }
+
+  function copyFxReport() {
+    const text = JSON.stringify(fxReport(), null, 2);
+    if (navigator.clipboard?.writeText) {
+      navigator.clipboard.writeText(text)
+        .then(() => toast('FX report copied'))
+        .catch(() => window.prompt('Copy FX report:', text));
+    } else {
+      window.prompt('Copy FX report:', text);
+    }
+  }
+
+  function canApplyEffectQuality() {
+    if (G.busy || G.formingDeck || G.tutorialing) return false;
+    if (els.splash && els.splash.style.display !== 'none' && !els.splash.classList.contains('leaving')) return false;
+    if (els.riftBg?.classList.contains('playing')) return false;
+    if (document.querySelector('.emoji-rain, .after-ember-particle')) return false;
+    return true;
+  }
+
+  function requestEffectQuality(quality, reason = 'auto', attempt = 0) {
+    const safeQuality = normalizeEffectQuality(quality);
+    if (!safeQuality || safeQuality === G.effectQuality) return false;
+    if (FX_PERF.forced || FX_PERF.manualLock) return false;
+    FX_PERF.pendingQuality = safeQuality;
+    if (!canApplyEffectQuality() && attempt < 40) {
+      clearTimeout(fxQualityTimer);
+      fxQualityTimer = setTimeout(() => requestEffectQuality(safeQuality, reason, attempt + 1), 260);
+      return false;
+    }
+    FX_PERF.pendingQuality = null;
+    setEffectQuality(safeQuality, { reason });
+    return true;
+  }
+
+  function shouldDowngradeFx(stats) {
+    if (G.effectQuality === 'ultra-high') return stats.p95 > 38 || stats.dropped > 12 || stats.longTasks > 4;
+    if (G.effectQuality === 'high') return stats.p95 > 40 || stats.dropped > 14 || stats.longTasks > 4;
+    if (G.effectQuality === 'recommended') return stats.p95 > 72 || stats.dropped > 42 || stats.longTasks > 7;
+    if (G.effectQuality === 'medium') return stats.p95 > 54 || stats.dropped > 26 || stats.longTasks > 5;
+    return false;
+  }
+
+  function downgradeFxFromStats(stats) {
+    if (FX_PERF.forced || FX_PERF.manualLock) return;
+    if (!shouldDowngradeFx(stats)) return;
+    const next = ['ultra-high', 'high'].includes(G.effectQuality) ? 'recommended' : 'low';
+    writeEffectJankMemory(next, `jank:${G.effectQuality}`, stats);
+    requestEffectQuality(next, `jank:${stats.p95}ms`);
+  }
+
+  function startFxPerfMonitor() {
+    if (FX_PERF.rafId) return;
+    if ('PerformanceObserver' in window) {
+      try {
+        const observer = new PerformanceObserver(list => {
+          const now = performance.now();
+          const entries = list.getEntries();
+          FX_PERF.longTasks += entries.length;
+          entries.forEach(() => FX_PERF.longTaskTimes.push(now));
+          FX_PERF.longTaskTimes = FX_PERF.longTaskTimes.filter(time => now - time < 15000);
+          updateFxDebugPanel();
+        });
+        observer.observe({ type: 'longtask', buffered: true });
+      } catch (e) {}
+    }
+    const tick = ts => {
+      if (document.visibilityState === 'visible' && FX_PERF.lastTs) {
+        const dt = ts - FX_PERF.lastTs;
+        if (dt > 0 && dt < 250) {
+          FX_PERF.frames.push(dt);
+          if (FX_PERF.frames.length > 180) FX_PERF.frames.shift();
+          if (performance.now() <= FX_PERF.phaseUntil) FX_PERF.phaseFrames.push(dt);
+          else if (FX_PERF.phase !== 'idle') FX_PERF.phase = 'idle';
+        }
+      }
+      FX_PERF.lastTs = ts;
+      if (ts - FX_PERF.lastMetricsAt > 650) {
+        FX_PERF.stats = fxStats();
+        FX_PERF.lastMetricsAt = ts;
+        if (FX_PERF.stats.samples >= 60) downgradeFxFromStats(FX_PERF.stats);
+        updateFxDebugPanel();
+      }
+      FX_PERF.rafId = requestAnimationFrame(tick);
+    };
+    FX_PERF.rafId = requestAnimationFrame(tick);
+  }
+
+  function startFxCapabilityProbe({ force = false } = {}) {
+    if (FX_PERF.probeRunning || FX_PERF.forced || FX_PERF.manualLock) return;
+    if (!force && (!isMobileEffectTarget() || !isFlagshipMobileCandidate())) return;
+    FX_PERF.probeRunning = true;
+    const longTaskStart = FX_PERF.longTasks;
+    const start = performance.now();
+    const startFrames = FX_PERF.frames.length;
+    markFxPhase('capability-probe', 1150);
+    setTimeout(() => {
+      const recent = FX_PERF.frames.slice(startFrames);
+      const stats = fxStats(recent.length >= 24 ? recent : FX_PERF.frames);
+      stats.duration = Math.round(performance.now() - start);
+      stats.newLongTasks = FX_PERF.longTasks - longTaskStart;
+      FX_PERF.probe = stats;
+      FX_PERF.probeRunning = false;
+      const smoothForHigh = stats.samples >= 24 && stats.p95 <= 28 && stats.dropped <= 2 && stats.newLongTasks === 0;
+      if (isMobileEffectTarget() && isFlagshipMobileCandidate() && G.effectQuality === 'recommended' && smoothForHigh) {
+        requestEffectQuality('high', 'probe-high');
+      }
+      if (isDesktopEffectTarget() && ['high', 'ultra-high'].includes(G.effectQuality) && !smoothForHigh && stats.p95 > 45) {
+        writeEffectJankMemory('recommended', 'desktop-probe', stats);
+        requestEffectQuality('recommended', 'desktop-probe');
+      }
+      updateFxDebugPanel();
+    }, 1120);
+  }
+
+  function scheduleFxCapabilityProbe() {
+    if (FX_PERF.forced || FX_REDUCED_MOTION || FX_SAVE_DATA) return;
+    setTimeout(() => startFxCapabilityProbe(), 1200);
   }
 
   function shuffle(a) {
@@ -563,6 +902,7 @@
     if (!els.splash || els.splash.style.display === 'none') return;
     if (splashIntroStarted && !force) return;
     splashIntroStarted = true;
+    markFxPhase('splash', 2200);
     syncSplashLogoFx();
     clearTimeout(splashAnticipationTimer);
     els.splash.classList.remove('splash-intro', 'splash-anticipating');
@@ -785,6 +1125,8 @@
 
   function triggerRift(action) {
     if (!els.riftBg) return;
+    if (baselineEffectQuality() && els.riftBg.classList.contains('playing')) return;
+    markFxPhase('rift', effectProfile().riftTimeoutMs + 240);
     clearTimeout(riftTimer);
     clearRiftShards();
     RIFT_PALETTES.forEach(name => els.riftBg.classList.remove(name));
@@ -1098,6 +1440,7 @@
   }
 
   function playDeckFormation({ variant = 'sidecut' } = {}) {
+    if (baselineEffectQuality() && G.formingDeck) return;
     if (!els.app.classList.contains('on') || !els.deckFormation) {
       G.formingDeck = false;
       showCurrentActions();
@@ -1106,6 +1449,7 @@
 
     const safeVariant = FORMATION_CONFIGS[variant] ? variant : 'sidecut';
     const cfg = formationConfig(safeVariant);
+    markFxPhase('shuffle', cfg.landingDelayMs + cfg.landingDurMs + 760);
     clearDeckFormation({ releaseIOS: false });
     hideActions({ immediate: true });
     G.busy = true;
@@ -3743,6 +4087,8 @@
   function emojiRain(emoji, tone = 'yes') {
     const box = $('embers');
     if (!box) return;
+    if (baselineEffectQuality() && box.querySelector('.emoji-rain')) return;
+    markFxPhase('emoji-rain', 4700);
     const count = effectProfile().emojiRainCount || 20;
     const palette = emojiRainPalette(emoji, tone);
     for (let i = 0; i < count; i++) {
@@ -4890,6 +5236,7 @@
     const skippedTargets = openingTargets.filter(target => !targets.includes(target));
     skippedTargets.forEach((target, index) => settleAfterUnlockTarget(target, 720 + index * 90));
     if (!targets.length || !els.afterXpBar || !els.after) return;
+    markFxPhase('end-unlock', 7200);
 
     const origin = els.afterXpBar.getBoundingClientRect();
     const sx = origin.left + origin.width * 0.82;
@@ -5435,13 +5782,23 @@
         </div>
         <div class="dev-group">
           <b>FX</b>
+          <button type="button" data-dev="quality-ultra-high">UHigh</button>
           <button type="button" data-dev="quality-high">High</button>
+          <button type="button" data-dev="quality-medium">Med</button>
           <button type="button" data-dev="quality-rec">Rec</button>
           <button type="button" data-dev="quality-low">Low</button>
+          <button type="button" data-dev="quality-ultra-low">ULow</button>
+          <button type="button" data-dev="quality-auto">Auto</button>
+          <button type="button" data-dev="perf-probe">Probe</button>
+          <button type="button" data-dev="perf-copy">Copy FX</button>
           <button type="button" data-dev="rift-yes">Rift YES</button>
           <button type="button" data-dev="rift-dare">Rift DARE</button>
           <button type="button" data-dev="rain-devil">😈 Rain</button>
           <button type="button" data-dev="rain-angel">👼 Rain</button>
+        </div>
+        <div class="dev-group dev-fx-readout">
+          <b>Perf</b>
+          <span data-dev-fx-report>FX warming up...</span>
         </div>
         <div class="dev-group">
           <b>Anim</b>
@@ -5466,9 +5823,20 @@
       if (action === 'td-fire-after') devShowAfter(GAME.TD, { reset: true, tier: 'fire' });
       if (action === 'velvet-after') devShowAfter(GAME.NEVER, { reset: true, ritualId: 'velvet-fire' });
       if (action === 'red-after') devShowAfter(GAME.TD, { reset: true, ritualId: 'red-room' });
-      if (action === 'quality-high') { setEffectQuality('high'); toast('Debug effects: high'); }
-      if (action === 'quality-rec') { setEffectQuality('recommended'); toast('Debug effects: recommended'); }
-      if (action === 'quality-low') { setEffectQuality('low'); toast('Debug effects: low'); }
+      if (action === 'quality-ultra-high') { setEffectQuality('ultra-high', { manual: true, reason: 'debug' }); toast('Debug effects: ultra high'); }
+      if (action === 'quality-high') { setEffectQuality('high', { manual: true, reason: 'debug' }); toast('Debug effects: high'); }
+      if (action === 'quality-medium') { setEffectQuality('medium', { manual: true, reason: 'debug' }); toast('Debug effects: medium'); }
+      if (action === 'quality-rec') { setEffectQuality('recommended', { manual: true, reason: 'debug' }); toast('Debug effects: recommended'); }
+      if (action === 'quality-low') { setEffectQuality('low', { manual: true, reason: 'debug' }); toast('Debug effects: low'); }
+      if (action === 'quality-ultra-low') { setEffectQuality('ultra-low', { manual: true, reason: 'debug' }); toast('Debug effects: ultra low'); }
+      if (action === 'quality-auto') {
+        FX_PERF.manualLock = false;
+        setEffectQuality(detectEffectQuality(), { reason: FX_PERF.reason || 'debug-auto' });
+        startFxCapabilityProbe({ force: true });
+        toast('Debug effects: auto');
+      }
+      if (action === 'perf-probe') startFxCapabilityProbe({ force: true });
+      if (action === 'perf-copy') copyFxReport();
       if (action === 'rift-yes') triggerRift('yes');
       if (action === 'rift-dare') triggerRift('dare');
       if (action === 'rain-devil') emojiRain('😈', 'dare');
@@ -5482,6 +5850,9 @@
         toast('Debug progress reset');
       }
     });
+    FX_PERF.debugEl = panel;
+    FX_PERF.debugTextEl = panel.querySelector('[data-dev-fx-report]');
+    updateFxDebugPanel();
     document.body.appendChild(panel);
     window.IgnightDev = {
       mode: devOpenMode,
@@ -5494,6 +5865,8 @@
       rain: emojiRain,
       formation: devTriggerFormation,
       effects: setEffectQuality,
+      perf: fxReport,
+      probeEffects: () => startFxCapabilityProbe({ force: true }),
       mpSnapshot: () => buildMpSnapshot('debug', { advance: false }),
       mpApplySnapshot: snapshot => applyMpSnapshot(snapshot, { force: true }),
       mpApplySnapshotStrict: snapshot => applyMpSnapshot(snapshot),
@@ -6307,7 +6680,11 @@
   }
 
   function init() {
-    setEffectQuality(detectEffectQuality());
+    const initialEffectQuality = detectEffectQuality();
+    FX_PERF.initial = initialEffectQuality;
+    setEffectQuality(initialEffectQuality, { reason: FX_PERF.reason || 'initial' });
+    startFxPerfMonitor();
+    scheduleFxCapabilityProbe();
     G.locale = LOCALES.en;
     ensureMpDebugPanel();
     bindMpDebugVideoEvents();
