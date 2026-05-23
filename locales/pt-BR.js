@@ -269,7 +269,7 @@
       legalNotice: 'Aviso 18+',
       legalContact: 'Contato',
       legalTitlePrivacy: 'Privacidade',
-      legalBodyPrivacy: 'O Ignight 1.0 RC salva sua confirmação de idade, idioma e preferências de jogo neste dispositivo.\n\nOs eventos de analytics são neutros e ficam no navegador até você conectar um provedor. Patrocinadores ou redes de anúncios podem coletar dados pelas próprias políticas depois de configurados.',
+      legalBodyPrivacy: 'O Ignight salva sua confirmação de idade, idioma e preferências de jogo neste dispositivo.\n\nOs eventos de analytics são neutros e ficam no navegador até você conectar um provedor. Patrocinadores ou redes de anúncios podem coletar dados pelas próprias políticas depois de configurados.',
       legalTitleTerms: 'Termos',
       legalBodyTerms: 'Ignight é um jogo de cartas erótico só para adultos, feito para uso privado. Ao entrar, você confirma que tem 18+ e pode ver conteúdo adulto onde está.\n\nO jogo é entretenimento. Você é responsável pelas suas escolhas, leis locais e com quem joga.',
       legalTitleNotice: 'Aviso de conteúdo adulto',

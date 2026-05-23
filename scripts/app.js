@@ -11,10 +11,11 @@
   const URL_FLAGS = new URLSearchParams(window.location.search);
   const DEV_MODE = URL_FLAGS.get('debug') === '1' || URL_FLAGS.get('dev') === '1';
   const MP_DEBUG = URL_FLAGS.get('mpdebug') === '1' || URL_FLAGS.get('mpdiag') === '1';
+  const MP_LAB = MP_DEBUG || URL_FLAGS.get('mplab') === '1';
   const cleanMpRoom = value => String(value || '').replace(/[^a-zA-Z0-9_-]/g, '').slice(0, 96);
   const MP_DEBUG_ROLE = ['host', 'guest'].includes(URL_FLAGS.get('mprole')) ? URL_FLAGS.get('mprole') : '';
   const MP_DEBUG_ROOM = cleanMpRoom(URL_FLAGS.get('mproom'));
-  const MP_JOIN_ROOM = cleanMpRoom(URL_FLAGS.get('mp') || (MP_DEBUG_ROLE === 'guest' ? MP_DEBUG_ROOM : ''));
+  const MP_JOIN_ROOM = MP_LAB ? cleanMpRoom(URL_FLAGS.get('mp') || (MP_DEBUG_ROLE === 'guest' ? MP_DEBUG_ROOM : '')) : '';
   const MP_FORCE_RELAY = URL_FLAGS.get('mprelay') === '1' || URL_FLAGS.get('mptur') === 'relay';
   const MP_WEBCAM_VIEWPORT_PAD = 5;
   const MP_ICE_URL = 'turn-config.php';
@@ -6213,12 +6214,15 @@
         ? (game === GAME.TD ? t('gameTruthDareName') : t('gameNeverName'))
         : `${ritual.count?.neverCards || ((ritual.count?.truthCards || 0) + (ritual.count?.dareCards || 0))} ✦`;
       const footer = unlocked ? tone : (GM.unlockRequirement?.(ritual, progress, G.lang) || gmLabel('locked'));
+      const multiplayerChoice = MP_LAB
+        ? `<button type="button" data-play="multiplayer"><span class="play-emoji" aria-hidden="true">👥</span><span class="play-label">${escapeHtml(t('mpMultiplayer'))}</span></button>`
+        : '';
       const playChoice = unlocked
         ? `<div class="ritual-play-choice" aria-hidden="true">
             <b>${escapeHtml(t('mpStart'))}</b>
             <div>
               <button type="button" data-play="solo"><span class="play-emoji" aria-hidden="true">👤</span><span class="play-label">${escapeHtml(t('mpSolo'))}</span></button>
-              <button type="button" data-play="multiplayer"><span class="play-emoji" aria-hidden="true">👥</span><span class="play-label">${escapeHtml(t('mpMultiplayer'))}</span></button>
+              ${multiplayerChoice}
             </div>
           </div>`
         : '';
@@ -6430,7 +6434,10 @@
         e.stopPropagation();
         window.SFX.click();
         vibe(8);
-        if (play.dataset.play === 'multiplayer') startMultiplayerHost(ritual);
+        if (play.dataset.play === 'multiplayer') {
+          if (!MP_LAB) return;
+          startMultiplayerHost(ritual);
+        }
         else beginGame(G.pendingGame, ritual);
         return;
       }
@@ -6642,7 +6649,7 @@
       vibe(15);
       const sp = els.splash;
       sp.classList.add('leaving');
-      if (MP_DEBUG_ROLE === 'host' && MP_DEBUG_ROOM) {
+      if (MP_LAB && MP_DEBUG_ROLE === 'host' && MP_DEBUG_ROOM) {
         setTimeout(() => startMultiplayerHost(classicNeverRitual(), { roomId: MP_DEBUG_ROOM }), 360);
       } else if (G.mp.requestedJoin) {
         setTimeout(() => startMultiplayerGuest(G.mp.requestedJoin), 360);

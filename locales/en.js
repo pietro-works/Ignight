@@ -269,7 +269,7 @@
       legalNotice: 'Adult notice',
       legalContact: 'Contact',
       legalTitlePrivacy: 'Privacy',
-      legalBodyPrivacy: 'Ignight 1.0 RC stores your age confirmation, language, and play preferences on this device.\n\nAnalytics events are vendor-neutral and stay in the browser unless you connect an analytics provider. Sponsor or ad providers may collect data under their own policies once configured.',
+      legalBodyPrivacy: 'Ignight stores your age confirmation, language, and play preferences on this device.\n\nAnalytics events are vendor-neutral and stay in the browser unless you connect an analytics provider. Sponsor or ad providers may collect data under their own policies once configured.',
       legalTitleTerms: 'Terms',
       legalBodyTerms: 'Ignight is an adults-only erotic card game for private play. By entering, you confirm that you are 18+ and allowed to view adult content where you are.\n\nThe game is entertainment. You are responsible for your own choices, local laws, and who you play with.',
       legalTitleNotice: 'Adult content notice',

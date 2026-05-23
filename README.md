@@ -60,7 +60,7 @@ Static app pages run locally. Server-backed multiplayer pieces need a PHP-capabl
 
 ## Repo Status
 
-This repository tracks the public web/PWA codebase for Ignight. Public release decisions should stay deliberate because the flagship build is adult and explicit.
+This repository tracks the public web/PWA codebase for Ignight.
 
 ## License
 

@@ -1,21 +1,27 @@
 {
   "name": "Ignight",
   "short_name": "Ignight",
+  "id": "./",
+  "start_url": "./",
+  "scope": "./",
+  "description": "An explicit adult card game with rituals, embers, and local-first play.",
   "icons": [
     {
       "src": "web-app-manifest-192x192.png",
       "sizes": "192x192",
       "type": "image/png",
-      "purpose": "maskable"
+      "purpose": "any maskable"
     },
     {
       "src": "web-app-manifest-512x512.png",
       "sizes": "512x512",
       "type": "image/png",
-      "purpose": "maskable"
+      "purpose": "any maskable"
     }
   ],
   "theme_color": "#07050a",
   "background_color": "#07050a",
-  "display": "standalone"
+  "display": "standalone",
+  "orientation": "portrait-primary",
+  "categories": ["games", "entertainment"]
 }

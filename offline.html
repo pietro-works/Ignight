@@ -1,0 +1,239 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="theme-color" content="#07050a">
+<title>Ignight Offline</title>
+<style>
+:root {
+  --bg: #07050a;
+  --gold: #c9a84c;
+  --gold-l: #e8c97a;
+  --rose: #c9455a;
+  --rose-l: #e8607a;
+  --cream: #f5ede0;
+  --muted: #6a5868;
+}
+
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+html,
+body {
+  min-height: 100%;
+}
+
+body {
+  background:
+    radial-gradient(ellipse at 50% 34%, rgba(64, 12, 30, 0.86), transparent 45%),
+    radial-gradient(ellipse at 50% 72%, rgba(201, 168, 76, 0.13), transparent 44%),
+    radial-gradient(ellipse at 50% 60%, #12050e 0%, var(--bg) 100%);
+  color: var(--cream);
+  display: grid;
+  font-family: 'Cormorant Garamond', Georgia, 'Times New Roman', serif;
+  min-height: 100dvh;
+  overflow: hidden;
+  padding: 24px;
+  position: relative;
+  text-align: center;
+}
+
+body::before,
+body::after {
+  content: '';
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+}
+
+body::before {
+  background:
+    radial-gradient(circle at 50% 38%, rgba(201, 69, 90, 0.26), transparent 20%),
+    radial-gradient(circle at 50% 74%, rgba(232, 201, 122, 0.1), transparent 26%);
+  filter: blur(24px);
+}
+
+body::after {
+  background:
+    linear-gradient(rgba(255, 255, 255, 0.018) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255, 255, 255, 0.012) 1px, transparent 1px);
+  background-size: 42px 42px, 42px 42px;
+  mix-blend-mode: overlay;
+  opacity: 0.18;
+}
+
+main {
+  align-self: center;
+  display: grid;
+  justify-items: center;
+  justify-self: center;
+  max-width: 430px;
+  position: relative;
+  width: 100%;
+  z-index: 1;
+}
+
+.flame {
+  animation: flame-in 0.9s cubic-bezier(0.34, 1.56, 0.64, 1) both, breathe 2.8s 0.9s ease-in-out infinite;
+  filter: drop-shadow(0 0 50px rgba(201, 69, 90, 0.9));
+  margin-bottom: 22px;
+  width: clamp(86px, 24vw, 118px);
+}
+
+.flame img {
+  display: block;
+  width: 100%;
+}
+
+.kicker {
+  color: var(--gold);
+  font-size: 0.68rem;
+  letter-spacing: 0.34em;
+  margin-bottom: 12px;
+  text-transform: uppercase;
+}
+
+h1 {
+  background: linear-gradient(140deg, var(--gold) 0%, var(--gold-l) 42%, var(--rose-l) 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  filter: drop-shadow(0 0 40px rgba(201, 168, 76, 0.35));
+  font-family: 'Playfair Display', Georgia, 'Times New Roman', serif;
+  font-size: clamp(4.5rem, 18vw, 6rem);
+  font-style: italic;
+  font-weight: 700;
+  letter-spacing: 0;
+  line-height: 1.08;
+  margin-bottom: 14px;
+  padding-bottom: 0.08em;
+}
+
+p {
+  color: rgba(245, 237, 224, 0.72);
+  font-size: 1.08rem;
+  line-height: 1.45;
+  margin: 0 auto;
+  max-width: 31ch;
+}
+
+.divider {
+  background: linear-gradient(90deg, transparent, var(--gold), transparent);
+  height: 1px;
+  margin-top: 34px;
+  width: 60px;
+}
+
+button {
+  background: rgba(201, 168, 76, 0.07);
+  border: 1px solid rgba(201, 168, 76, 0.38);
+  border-radius: 50px;
+  color: var(--gold-l);
+  cursor: pointer;
+  font: inherit;
+  font-size: 1rem;
+  letter-spacing: 0.35em;
+  margin-top: 32px;
+  min-height: 58px;
+  min-width: min(100%, 310px);
+  overflow: hidden;
+  padding: 16px 42px;
+  position: relative;
+  text-transform: uppercase;
+  transition: background 0.2s, box-shadow 0.2s, transform 0.15s;
+}
+
+button::before {
+  animation: ring 2.5s 1.6s ease-in-out infinite;
+  border: 1px solid rgba(201, 168, 76, 0.2);
+  border-radius: 52px;
+  content: '';
+  inset: -2px;
+  pointer-events: none;
+  position: absolute;
+}
+
+button:hover,
+button:focus-visible {
+  background: rgba(201, 168, 76, 0.12);
+  box-shadow: 0 0 30px 4px rgba(201, 168, 76, 0.1);
+}
+
+button:active {
+  transform: scale(0.96);
+}
+
+button:focus-visible {
+  outline: 2px solid rgba(232, 201, 122, 0.72);
+  outline-offset: 4px;
+}
+
+@keyframes flame-in {
+  from {
+    opacity: 0;
+    transform: scale(0.4) translateY(30px);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
+}
+
+@keyframes breathe {
+  0%, 100% {
+    filter: drop-shadow(0 0 50px rgba(201, 69, 90, 0.9));
+    transform: scale(1);
+  }
+  50% {
+    filter: drop-shadow(0 0 80px rgba(201, 69, 90, 1));
+    transform: scale(1.07);
+  }
+}
+
+@keyframes ring {
+  0%, 100% {
+    opacity: 0.2;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.62;
+    transform: scale(1.045);
+  }
+}
+
+@media (max-height: 720px) {
+  .flame {
+    font-size: 4.4rem;
+    margin-bottom: 14px;
+  }
+
+  h1 {
+    font-size: clamp(3.8rem, 16vw, 5rem);
+    margin-bottom: 8px;
+  }
+
+  .divider {
+    margin-top: 24px;
+  }
+
+  button {
+    margin-top: 24px;
+  }
+}
+</style>
+</head>
+<body>
+<main>
+  <div class="flame" aria-hidden="true"><img src="favicon.svg" alt=""></div>
+  <div class="kicker">Signal lost</div>
+  <h1>Ignight</h1>
+  <p>The room is still here. Reconnect and step back in.</p>
+  <div class="divider" aria-hidden="true"></div>
+  <button type="button" onclick="window.location.reload()">Try again</button>
+</main>
+</body>
+</html>

@@ -1,6 +1,6 @@
 # Store Risk Notes
 
-This RC is not intended for Google Play or AdMob as-is.
+Ignight is distributed as a direct web experience.
 
 ## Main Risks
 - Explicit sexual/kink text is bundled directly in locale files.
